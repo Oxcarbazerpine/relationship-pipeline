@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Stage {
+  INTRO
+  COMFORT
+  FLIRT
+  UPGRADE
+  COOLING
+  ENDED
+}
+
+enum InteractionFrequency {
+  HIGH
+  MEDIUM
+  LOW
+  NONE
+}
+
+enum InitiativeDirection {
+  SELF
+  OTHER
+  BALANCED
+}
+
+enum EmotionQuality {
+  NEUTRAL
+  POSITIVE
+  VOLATILE
+  DRAINING
+}
+
+enum InvestmentBalance {
+  SELF_MORE
+  BALANCED
+  OTHER_MORE
+}
+
+enum OfflineStatus {
+  NEVER
+  ONCE
+  MULTIPLE
+}
+
+enum NextAction {
+  KEEP_CHAT
+  LIGHT_UPGRADE
+  CLEAR_INVITE
+  SLOW_DOWN
+  OBSERVE
+  END
+}
+
+enum UpgradeSignal {
+  CARE
+  INVITE
+  TIME_GIVE
+  BODY_LANGUAGE
+  EMOTIONAL_DEPENDENCE
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String?  @unique
+  displayName    String?
+  locale         String   @default("zh")
+  trialEndsAt    DateTime
+  subscriptionId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  connections    Connection[]
+}
+
+model Connection {
+  id                 String               @id @default(cuid())
+  userId             String
+  name               String
+  stage              Stage
+  lastInteractionAt  DateTime?
+  interactionFreq    InteractionFrequency
+  initiative         InitiativeDirection
+  emotionQuality     EmotionQuality
+  investmentBalance  InvestmentBalance
+  offlineStatus      OfflineStatus
+  upgradeSignals     UpgradeSignal[]
+  nextAction         NextAction
+  actionDueAt        DateTime?
+  decisionReason     String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
