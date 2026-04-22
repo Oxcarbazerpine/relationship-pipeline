@@ -4,8 +4,10 @@ import express from "express";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
 import { PrismaClient } from "@prisma/client";
+import { decide, type DecisionInput } from "./decision.js";
+import { createAdvisor, type AdvisorKind } from "./advisor.js";
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const prisma = new PrismaClient();
 const app = express();
@@ -93,6 +95,8 @@ app.get("/me", authMiddleware, (req, res) => {
   });
 });
 
+const nextActionEnum = z.enum(["KEEP_CHAT", "LIGHT_UPGRADE", "CLEAR_INVITE", "SLOW_DOWN", "OBSERVE", "END"]);
+
 const connectionSchema = z.object({
   name: z.string().min(1),
   stage: z.enum(["INTRO", "COMFORT", "FLIRT", "UPGRADE", "COOLING", "ENDED"]),
@@ -104,9 +108,53 @@ const connectionSchema = z.object({
   offlineStatus: z.enum(["NEVER", "ONCE", "MULTIPLE"]),
   upgradeSignals: z.array(z.enum(["CARE", "INVITE", "TIME_GIVE", "BODY_LANGUAGE", "EMOTIONAL_DEPENDENCE"]))
     .default([]),
-  nextAction: z.enum(["KEEP_CHAT", "LIGHT_UPGRADE", "CLEAR_INVITE", "SLOW_DOWN", "OBSERVE", "END"]),
+  overrideAction: nextActionEnum.nullable().optional(),
+  overrideReason: z.string().nullable().optional(),
   actionDueAt: z.string().datetime().optional().nullable(),
-  decisionReason: z.string().optional().nullable()
+  notes: z.string().nullable().optional(),
+  advisor: z.enum(["RULES", "AI"]).optional().default("RULES")
+});
+
+type ConnectionRow = {
+  suggestedAction: string;
+  suggestedReason: string;
+  overrideAction: string | null;
+  overrideReason: string | null;
+} & Record<string, unknown>;
+
+function withDerivedAction<T extends ConnectionRow>(row: T) {
+  return {
+    ...row,
+    nextAction: row.overrideAction ?? row.suggestedAction,
+    isOverridden: row.overrideAction !== null && row.overrideAction !== undefined
+  };
+}
+
+const decideSchema = connectionSchema.pick({
+  stage: true,
+  interactionFreq: true,
+  initiative: true,
+  emotionQuality: true,
+  investmentBalance: true,
+  offlineStatus: true,
+  upgradeSignals: true
+});
+
+app.post("/decide", authMiddleware, (req, res) => {
+  const input = decideSchema.parse(req.body);
+  res.json(decide(input as DecisionInput));
+});
+
+app.post("/advisor/test", authMiddleware, async (req, res) => {
+  const kind = z.enum(["RULES", "AI"]).parse(req.body?.kind ?? "AI");
+  try {
+    const advisor = createAdvisor(kind as AdvisorKind);
+    const result = await advisor.healthCheck();
+    if (result.ok) res.json({ ok: true, kind });
+    else res.status(502).json({ ok: false, kind, error: result.error });
+  } catch (e) {
+    res.status(500).json({ ok: false, kind, error: (e as Error).message });
+  }
 });
 
 app.get("/connections", authMiddleware, async (_req, res) => {
@@ -115,35 +163,86 @@ app.get("/connections", authMiddleware, async (_req, res) => {
     where: { userId: user.id },
     orderBy: { updatedAt: "desc" }
   });
-  res.json(connections);
+  res.json(connections.map(withDerivedAction));
 });
+
+async function runAdvisor(input: DecisionInput, kind: AdvisorKind) {
+  try {
+    const advisor = createAdvisor(kind);
+    return await advisor.advise(input);
+  } catch (e) {
+    if (kind === "AI") {
+      const fallback = await createAdvisor("RULES").advise(input);
+      return { ...fallback, advisorReason: `AI failed, used rules: ${(e as Error).message}` };
+    }
+    throw e;
+  }
+}
 
 app.post("/connections", authMiddleware, async (req, res) => {
   const user = res.locals.user;
   const data = connectionSchema.parse(req.body);
+  const result = await runAdvisor(data as DecisionInput, data.advisor);
   const connection = await prisma.connection.create({
     data: {
       ...data,
+      suggestedAction: result.nextAction,
+      suggestedReason: result.reasonCode,
+      overrideAction: data.overrideAction ?? null,
+      overrideReason: data.overrideReason ?? null,
+      notes: data.notes ?? null,
+      advisor: result.advisor,
+      advisorReason: result.advisorReason,
+      priorityScore: result.priorityScore,
+      priorityAdvice: result.priorityAdvice,
       lastInteractionAt: data.lastInteractionAt ? new Date(data.lastInteractionAt) : null,
       actionDueAt: data.actionDueAt ? new Date(data.actionDueAt) : null,
       userId: user.id
     }
   });
-  res.status(201).json(connection);
+  res.status(201).json(withDerivedAction(connection));
 });
 
 app.put("/connections/:id", authMiddleware, async (req, res) => {
   const user = res.locals.user;
   const data = connectionSchema.parse(req.body);
+  const result = await runAdvisor(data as DecisionInput, data.advisor);
   const connection = await prisma.connection.update({
     where: { id: req.params.id, userId: user.id },
     data: {
       ...data,
+      suggestedAction: result.nextAction,
+      suggestedReason: result.reasonCode,
+      overrideAction: data.overrideAction ?? null,
+      overrideReason: data.overrideReason ?? null,
+      notes: data.notes ?? null,
+      advisor: result.advisor,
+      advisorReason: result.advisorReason,
+      priorityScore: result.priorityScore,
+      priorityAdvice: result.priorityAdvice,
       lastInteractionAt: data.lastInteractionAt ? new Date(data.lastInteractionAt) : null,
       actionDueAt: data.actionDueAt ? new Date(data.actionDueAt) : null
     }
   });
-  res.json(connection);
+  res.json(withDerivedAction(connection));
+});
+
+const overrideSchema = z.object({
+  overrideAction: nextActionEnum.nullable(),
+  overrideReason: z.string().nullable().optional()
+});
+
+app.patch("/connections/:id/override", authMiddleware, async (req, res) => {
+  const user = res.locals.user;
+  const { overrideAction, overrideReason } = overrideSchema.parse(req.body);
+  const connection = await prisma.connection.update({
+    where: { id: req.params.id, userId: user.id },
+    data: {
+      overrideAction,
+      overrideReason: overrideAction === null ? null : overrideReason ?? null
+    }
+  });
+  res.json(withDerivedAction(connection));
 });
 
 app.delete("/connections/:id", authMiddleware, async (req, res) => {

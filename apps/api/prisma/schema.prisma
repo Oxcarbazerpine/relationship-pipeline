@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -65,6 +65,18 @@ enum UpgradeSignal {
   EMOTIONAL_DEPENDENCE
 }
 
+enum PriorityAdvice {
+  HIGH
+  MEDIUM
+  LOW
+  UNKNOWN
+}
+
+enum AdvisorKind {
+  RULES
+  AI
+}
+
 model User {
   id             String   @id @default(cuid())
   email          String?  @unique
@@ -89,9 +101,16 @@ model Connection {
   investmentBalance  InvestmentBalance
   offlineStatus      OfflineStatus
   upgradeSignals     UpgradeSignal[]
-  nextAction         NextAction
+  suggestedAction    NextAction
+  suggestedReason    String
+  overrideAction     NextAction?
+  overrideReason     String?
   actionDueAt        DateTime?
-  decisionReason     String?
+  notes              String?
+  priorityScore      Int                 @default(0)
+  priorityAdvice     PriorityAdvice      @default(UNKNOWN)
+  advisor            AdvisorKind         @default(RULES)
+  advisorReason      String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

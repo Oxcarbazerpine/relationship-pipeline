@@ -1,11 +1,11 @@
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import "./i18n";
-
-const sampleConnections = [
-  { id: "A", stage: "舒适期", nextAction: "轻升级测试" },
-  { id: "B", stage: "暧昧期", nextAction: "明确邀约" },
-  { id: "C", stage: "认识期", nextAction: "冷却" }
-];
+import { Sidebar } from "./components/Sidebar";
+import { StageKanban } from "./pages/StageKanban";
+import { RelationshipList } from "./pages/RelationshipList";
+import { ActionCalendar } from "./pages/ActionCalendar";
+import { InsightsDashboard } from "./pages/InsightsDashboard";
 
 const languages = [
   { value: "zh", label: "中文" },
@@ -14,60 +14,57 @@ const languages = [
 ];
 
 export default function App() {
-  const { t, i18n } = useTranslation();
+  const { i18n } = useTranslation();
 
   return (
-    <div style={{ fontFamily: "system-ui", padding: 24, maxWidth: 960, margin: "0 auto" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <h1 style={{ marginBottom: 4 }}>{t("title")}</h1>
-          <p style={{ marginTop: 0, color: "#555" }}>{t("subtitle")}</p>
-        </div>
-        <select
-          value={i18n.language}
-          onChange={(event) => i18n.changeLanguage(event.target.value)}
-          style={{ padding: 8 }}
-        >
-          {languages.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </header>
-
-      <section style={{ marginTop: 24, display: "grid", gap: 16 }}>
-        <div style={{ background: "#f5f6ff", padding: 16, borderRadius: 12 }}>
-          <strong>{t("trial")}</strong>
-          <p style={{ marginTop: 8 }}>{t("signIn")}</p>
-        </div>
-
-        <div style={{ display: "grid", gap: 12 }}>
-          {sampleConnections.map((item) => (
-            <div
-              key={item.id}
-              style={{
-                border: "1px solid #e0e0e0",
-                borderRadius: 12,
-                padding: 16,
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center"
-              }}
+    <BrowserRouter>
+      <div style={styles.shell}>
+        <Sidebar />
+        <div style={styles.main}>
+          <div style={styles.topbar}>
+            <select
+              value={i18n.language}
+              onChange={(e) => i18n.changeLanguage(e.target.value)}
+              style={styles.langSelect}
             >
-              <div>
-                <h3 style={{ margin: 0 }}>{item.id}</h3>
-                <p style={{ margin: "8px 0 0", color: "#444" }}>
-                  {t("stage")}: {item.stage}
-                </p>
-              </div>
-              <span style={{ background: "#edf1ff", padding: "6px 12px", borderRadius: 999 }}>
-                {t("nextAction")}: {item.nextAction}
-              </span>
-            </div>
-          ))}
+              {languages.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+          <Routes>
+            <Route path="/" element={<Navigate to="/pipeline/kanban" replace />} />
+            <Route path="/pipeline/list" element={<RelationshipList />} />
+            <Route path="/pipeline/kanban" element={<StageKanban />} />
+            <Route path="/action/calendar" element={<ActionCalendar />} />
+            <Route path="/insights/dashboard" element={<InsightsDashboard />} />
+          </Routes>
         </div>
-      </section>
-    </div>
+      </div>
+    </BrowserRouter>
   );
 }
+
+const styles: Record<string, React.CSSProperties> = {
+  shell: {
+    display: "flex",
+    minHeight: "100vh",
+    background: "#0b1c2e",
+    fontFamily: "system-ui",
+    color: "#e3edf5"
+  },
+  main: { flex: 1, display: "flex", flexDirection: "column" },
+  topbar: {
+    padding: "12px 24px",
+    borderBottom: "1px solid #1f3b58",
+    display: "flex",
+    justifyContent: "flex-end"
+  },
+  langSelect: {
+    background: "#1a3550",
+    color: "#cfe1f2",
+    border: "1px solid #2c4f70",
+    padding: "6px 10px",
+    borderRadius: 6
+  }
+};
