@@ -93,6 +93,12 @@ const resources = {
         AI: "AI"
       },
       noSignals: "无",
+      recommended: "推荐",
+      clearOverride: "清除手动覆盖 (回到推荐)",
+      daysSinceInteraction: "天数距离最后互动",
+      daysUntilDue: "行动DDL剩余天数",
+      advisorReason: "决策建议",
+      confirmDelete: "确定删除这条记录吗?",
       score: "评分",
       priority: "优先级",
       advisorMode: "决策方式",

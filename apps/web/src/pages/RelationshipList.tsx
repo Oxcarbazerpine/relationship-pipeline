@@ -3,14 +3,20 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import type {
   Connection,
+  ConnectionInput,
   EmotionQuality,
+  InitiativeDirection,
   InteractionFrequency,
+  InvestmentBalance,
   NextAction,
-  Stage
+  OfflineStatus,
+  Stage,
+  UpgradeSignal
 } from "../types";
 import { Chip } from "../components/Chip";
-import { ConnectionCard } from "../components/ConnectionCard";
 import { NewConnectionForm } from "../components/NewConnectionForm";
+import { EditableChipCell, EditableMultiChipCell, type ChipOption } from "../components/EditableChipCell";
+import { RecordDetailPanel } from "../components/RecordDetailPanel";
 import {
   emotionColor,
   initiativeColor,
@@ -26,6 +32,11 @@ import {
 const stageOptions: Stage[] = ["INTRO", "COMFORT", "FLIRT", "UPGRADE", "COOLING", "ENDED"];
 const freqOptions: InteractionFrequency[] = ["HIGH", "MEDIUM", "LOW", "NONE"];
 const emotionOptions: EmotionQuality[] = ["NEUTRAL", "POSITIVE", "VOLATILE", "DRAINING"];
+const initiativeOptions: InitiativeDirection[] = ["SELF", "OTHER", "BALANCED"];
+const investmentOptions: InvestmentBalance[] = ["SELF_MORE", "BALANCED", "OTHER_MORE"];
+const offlineOptions: OfflineStatus[] = ["NEVER", "ONCE", "MULTIPLE"];
+const upgradeOptions: UpgradeSignal[] = ["CARE", "INVITE", "TIME_GIVE", "BODY_LANGUAGE", "EMOTIONAL_DEPENDENCE"];
+const nextActionOptions: NextAction[] = ["KEEP_CHAT", "LIGHT_UPGRADE", "CLEAR_INVITE", "SLOW_DOWN", "OBSERVE", "END"];
 
 export function RelationshipList() {
   const { t } = useTranslation();
@@ -33,7 +44,7 @@ export function RelationshipList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const [stageFilter, setStageFilter] = useState<Stage | "">("");
   const [freqFilter, setFreqFilter] = useState<InteractionFrequency | "">("");
@@ -64,16 +75,43 @@ export function RelationshipList() {
     });
   }, [connections, stageFilter, freqFilter, emotionFilter]);
 
-  const handleOverride = async (id: string, action: NextAction | null, reason?: string | null) => {
-    await api.setOverride(id, action, reason);
-    await reload();
+  const handleOverride = async (id: string, action: NextAction | null) => {
+    const updated = await api.setOverride(id, action);
+    setConnections((cs) => cs.map((c) => (c.id === id ? updated : c)));
   };
 
   const handleDelete = async (id: string) => {
     await api.deleteConnection(id);
-    setExpandedId(null);
+    setOpenId(null);
     await reload();
   };
+
+  const applyPatch = useCallback(async (id: string, patch: Partial<ConnectionInput>) => {
+    const snapshot = connections;
+    setConnections((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } as Connection : c)));
+    try {
+      const updated = await api.patchConnection(id, patch);
+      setConnections((cs) => cs.map((c) => (c.id === id ? updated : c)));
+    } catch (e) {
+      console.error(e);
+      setConnections(snapshot);
+      setError((e as Error).message);
+    }
+  }, [connections]);
+
+  const setNextAction = useCallback(async (id: string, action: NextAction, suggested: NextAction) => {
+    if (action === suggested) {
+      await api.setOverride(id, null);
+    } else {
+      await api.setOverride(id, action);
+    }
+    await reload();
+  }, [reload]);
+
+  const clearOverride = useCallback(async (id: string) => {
+    await api.setOverride(id, null);
+    await reload();
+  }, [reload]);
 
   return (
     <div style={styles.page}>
@@ -127,6 +165,14 @@ export function RelationshipList() {
 
       {error && <div style={styles.error}>{error}</div>}
 
+      <RecordDetailPanel
+        connection={connections.find((c) => c.id === openId) ?? null}
+        onClose={() => setOpenId(null)}
+        onPatch={applyPatch}
+        onSetOverride={handleOverride}
+        onDelete={handleDelete}
+      />
+
       <div style={styles.tableWrap}>
         <table style={styles.table}>
           <thead>
@@ -143,56 +189,76 @@ export function RelationshipList() {
               <th style={styles.th}>{t("actionDueAtLabel")}</th>
               <th style={styles.th}>{t("priority")}</th>
               <th style={styles.th}>{t("advisorMode")}</th>
-              <th style={styles.thAction} />
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={13} style={styles.emptyCell}>...</td></tr>
+              <tr><td colSpan={12} style={styles.emptyCell}>...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={13} style={styles.emptyCell}>{t("empty")}</td></tr>
+              <tr><td colSpan={12} style={styles.emptyCell}>{t("empty")}</td></tr>
             ) : (
-              filtered.flatMap((c) => [
+              filtered.map((c) => (
                 <tr
                   key={c.id}
                   style={styles.row}
-                  onClick={() => setExpandedId((id) => (id === c.id ? null : c.id))}
+                  onClick={() => setOpenId(c.id)}
                 >
                   <td style={styles.td}>
                     <div style={styles.stageCell}>
-                      <Chip label={t(`Stage.${c.stage}`)} color={stageColor[c.stage]} />
+                      <EditableChipCell<Stage>
+                        value={c.stage}
+                        options={stageOptions.map((s) => ({ value: s, label: t(`Stage.${s}`), color: stageColor[s] }))}
+                        onChange={(v) => applyPatch(c.id, { stage: v })}
+                      />
                       <span style={styles.name}>{c.name}</span>
                     </div>
                   </td>
                   <td style={styles.td}>{c.lastInteractionAt?.slice(0, 10) ?? "—"}</td>
                   <td style={styles.td}>
-                    <Chip label={t(`InteractionFrequency.${c.interactionFreq}`)} color={interactionFreqColor[c.interactionFreq]} />
+                    <EditableChipCell<InteractionFrequency>
+                      value={c.interactionFreq}
+                      options={freqOptions.map((f) => ({ value: f, label: t(`InteractionFrequency.${f}`), color: interactionFreqColor[f] }))}
+                      onChange={(v) => applyPatch(c.id, { interactionFreq: v })}
+                    />
                   </td>
                   <td style={styles.td}>
-                    <Chip label={t(`InitiativeDirection.${c.initiative}`)} color={initiativeColor[c.initiative]} />
+                    <EditableChipCell<InitiativeDirection>
+                      value={c.initiative}
+                      options={initiativeOptions.map((i) => ({ value: i, label: t(`InitiativeDirection.${i}`), color: initiativeColor[i] }))}
+                      onChange={(v) => applyPatch(c.id, { initiative: v })}
+                    />
                   </td>
                   <td style={styles.td}>
-                    <Chip label={t(`EmotionQuality.${c.emotionQuality}`)} color={emotionColor[c.emotionQuality]} />
+                    <EditableChipCell<EmotionQuality>
+                      value={c.emotionQuality}
+                      options={emotionOptions.map((e) => ({ value: e, label: t(`EmotionQuality.${e}`), color: emotionColor[e] }))}
+                      onChange={(v) => applyPatch(c.id, { emotionQuality: v })}
+                    />
                   </td>
                   <td style={styles.td}>
-                    <Chip label={t(`InvestmentBalance.${c.investmentBalance}`)} color={investmentColor[c.investmentBalance]} />
+                    <EditableChipCell<InvestmentBalance>
+                      value={c.investmentBalance}
+                      options={investmentOptions.map((i) => ({ value: i, label: t(`InvestmentBalance.${i}`), color: investmentColor[i] }))}
+                      onChange={(v) => applyPatch(c.id, { investmentBalance: v })}
+                    />
                   </td>
                   <td style={styles.td}>
-                    <Chip label={t(`OfflineStatus.${c.offlineStatus}`)} color={offlineColor[c.offlineStatus]} />
+                    <EditableChipCell<OfflineStatus>
+                      value={c.offlineStatus}
+                      options={offlineOptions.map((o) => ({ value: o, label: t(`OfflineStatus.${o}`), color: offlineColor[o] }))}
+                      onChange={(v) => applyPatch(c.id, { offlineStatus: v })}
+                    />
                   </td>
                   <td style={styles.td}>
-                    {c.upgradeSignals.length === 0 ? (
-                      <Chip label={t("noSignals")} color="orangeLight2" />
-                    ) : (
-                      <div style={styles.chipRow}>
-                        {c.upgradeSignals.map((s) => (
-                          <Chip key={s} label={t(`UpgradeSignal.${s}`)} color={upgradeSignalColor[s]} />
-                        ))}
-                      </div>
-                    )}
+                    <EditableMultiChipCell<UpgradeSignal>
+                      values={c.upgradeSignals}
+                      options={upgradeOptions.map((u) => ({ value: u, label: t(`UpgradeSignal.${u}`), color: upgradeSignalColor[u] }))}
+                      onChange={(v) => applyPatch(c.id, { upgradeSignals: v })}
+                      emptyChip={{ label: t("noSignals"), color: "orangeLight2" }}
+                    />
                   </td>
                   <td style={styles.td}>
-                    <Chip label={t(`NextAction.${c.nextAction}`)} color={nextActionColor[c.nextAction]} />
+                    <NextActionCell connection={c} t={t} onPick={setNextAction} onClear={clearOverride} />
                   </td>
                   <td style={styles.td}>{c.actionDueAt?.slice(0, 10) ?? "—"}</td>
                   <td style={styles.td}>
@@ -205,23 +271,41 @@ export function RelationshipList() {
                       color={c.advisor === "AI" ? "greenLight2" : "blueLight2"}
                     />
                   </td>
-                  <td style={styles.tdAction}>
-                    <span style={styles.expandIcon}>{expandedId === c.id ? "▾" : "▸"}</span>
-                  </td>
-                </tr>,
-                expandedId === c.id ? (
-                  <tr key={`${c.id}-detail`}>
-                    <td colSpan={13} style={styles.detailCell}>
-                      <ConnectionCard connection={c} onOverride={handleOverride} onDelete={handleDelete} />
-                    </td>
-                  </tr>
-                ) : null
-              ])
+                </tr>
+              ))
             )}
           </tbody>
         </table>
       </div>
     </div>
+  );
+}
+
+function NextActionCell({
+  connection: c,
+  t,
+  onPick,
+  onClear
+}: {
+  connection: Connection;
+  t: (k: string, o?: Record<string, unknown>) => string;
+  onPick: (id: string, action: NextAction, suggested: NextAction) => Promise<void> | void;
+  onClear: (id: string) => Promise<void> | void;
+}) {
+  const options: ChipOption<NextAction>[] = nextActionOptions.map((a) => ({
+    value: a,
+    label: t(`NextAction.${a}`),
+    color: nextActionColor[a],
+    recommendedTag: a === c.suggestedAction ? `★ ${t("Advisor." + c.advisor)} ${t("recommended") || "推荐"}` : undefined
+  }));
+  return (
+    <EditableChipCell<NextAction>
+      value={c.nextAction}
+      options={options}
+      onChange={(v) => onPick(c.id, v, c.suggestedAction)}
+      onClear={c.isOverridden ? () => onClear(c.id) : undefined}
+      clearLabel={t("clearOverride") || "清除手动覆盖 (回到推荐)"}
+    />
   );
 }
 

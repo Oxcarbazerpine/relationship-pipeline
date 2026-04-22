@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
-import type { Connection, InteractionFrequency, NextAction, Stage } from "../types";
+import type { Connection, ConnectionInput, InteractionFrequency, NextAction, Stage } from "../types";
 import { Chip } from "../components/Chip";
+import { RecordDetailPanel } from "../components/RecordDetailPanel";
 import {
   emotionColor,
   initiativeColor,
@@ -23,6 +24,40 @@ export function StageKanban() {
   const [actionFilter, setActionFilter] = useState<NextAction | "">("");
   const [freqFilter, setFreqFilter] = useState<InteractionFrequency | "">("");
   const [loading, setLoading] = useState(true);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<Stage | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const applyPatch = async (id: string, patch: Partial<ConnectionInput>) => {
+    const snapshot = connections;
+    setConnections((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } as Connection : c)));
+    try {
+      const updated = await api.patchConnection(id, patch);
+      setConnections((cs) => cs.map((c) => (c.id === id ? updated : c)));
+    } catch (e) {
+      console.error(e);
+      setConnections(snapshot);
+    }
+  };
+
+  const setOverride = async (id: string, action: NextAction | null) => {
+    try {
+      const updated = await api.setOverride(id, action);
+      setConnections((cs) => cs.map((c) => (c.id === id ? updated : c)));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const deleteConnection = async (id: string) => {
+    try {
+      await api.deleteConnection(id);
+      setConnections((cs) => cs.filter((c) => c.id !== id));
+      setOpenId(null);
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   useEffect(() => {
     api.listConnections().then((list) => {
@@ -30,6 +65,25 @@ export function StageKanban() {
       setLoading(false);
     });
   }, []);
+
+  async function handleDrop(targetStage: Stage) {
+    const id = draggingId;
+    setDraggingId(null);
+    setDropTarget(null);
+    if (!id) return;
+    const current = connections.find((c) => c.id === id);
+    if (!current || current.stage === targetStage) return;
+
+    const snapshot = connections;
+    setConnections((cs) => cs.map((c) => (c.id === id ? { ...c, stage: targetStage } : c)));
+    try {
+      const updated = await api.setStage(id, targetStage);
+      setConnections((cs) => cs.map((c) => (c.id === id ? updated : c)));
+    } catch (e) {
+      console.error(e);
+      setConnections(snapshot);
+    }
+  }
 
   const filtered = useMemo(() => {
     return connections.filter((c) => {
@@ -81,21 +135,56 @@ export function StageKanban() {
         </select>
       </div>
 
+      <RecordDetailPanel
+        connection={connections.find((c) => c.id === openId) ?? null}
+        onClose={() => setOpenId(null)}
+        onPatch={applyPatch}
+        onSetOverride={setOverride}
+        onDelete={deleteConnection}
+      />
+
       {loading ? (
         <div style={{ color: "#7a9cc6" }}>...</div>
       ) : (
         <div style={styles.board}>
           {stageOrder.map((stage) => {
             const items = byStage.get(stage) ?? [];
+            const isDropTarget = dropTarget === stage && draggingId !== null;
             return (
-              <div key={stage} style={styles.column}>
+              <div
+                key={stage}
+                style={{ ...styles.column, ...(isDropTarget ? styles.columnActive : null) }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dropTarget !== stage) setDropTarget(stage);
+                }}
+                onDragLeave={(e) => {
+                  if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                  if (dropTarget === stage) setDropTarget(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  handleDrop(stage);
+                }}
+              >
                 <div style={styles.columnHeader}>
                   <Chip label={t(`Stage.${stage}`)} color={stageColor[stage]} size="md" />
                   <span style={styles.count}>{items.length}</span>
                 </div>
                 <div style={styles.cards}>
                   {items.map((c) => (
-                    <KanbanCard key={c.id} connection={c} />
+                    <KanbanCard
+                      key={c.id}
+                      connection={c}
+                      dragging={draggingId === c.id}
+                      onDragStart={() => setDraggingId(c.id)}
+                      onDragEnd={() => {
+                        setDraggingId(null);
+                        setDropTarget(null);
+                      }}
+                      onOpen={() => setOpenId(c.id)}
+                    />
                   ))}
                 </div>
               </div>
@@ -107,13 +196,35 @@ export function StageKanban() {
   );
 }
 
-function KanbanCard({ connection: c }: { connection: Connection }) {
+function KanbanCard({
+  connection: c,
+  dragging,
+  onDragStart,
+  onDragEnd,
+  onOpen
+}: {
+  connection: Connection;
+  dragging: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onOpen: () => void;
+}) {
   const { t } = useTranslation();
   const daysUntilDue = c.actionDueAt
     ? Math.round((new Date(c.actionDueAt).getTime() - Date.now()) / 86400000)
     : null;
   return (
-    <div style={styles.card}>
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", c.id);
+        onDragStart();
+      }}
+      onDragEnd={onDragEnd}
+      onClick={onOpen}
+      style={{ ...styles.card, ...(dragging ? styles.cardDragging : null), cursor: "pointer" }}
+    >
       <div style={styles.cardName}>{c.name}</div>
 
       {c.lastInteractionAt && (
@@ -226,7 +337,20 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13
   },
   board: { display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16 },
-  column: { minWidth: 260, display: "flex", flexDirection: "column", gap: 8 },
+  column: {
+    minWidth: 260,
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+    padding: 8,
+    borderRadius: 10,
+    border: "1px dashed transparent",
+    transition: "background 120ms, border-color 120ms"
+  },
+  columnActive: {
+    background: "rgba(38, 96, 58, 0.12)",
+    borderColor: "#26603a"
+  },
   columnHeader: { display: "flex", alignItems: "center", gap: 8, paddingBottom: 8 },
   count: { color: "#7a9cc6", fontSize: 14 },
   cards: { display: "flex", flexDirection: "column", gap: 10 },
@@ -237,8 +361,10 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 14,
     display: "flex",
     flexDirection: "column",
-    gap: 10
+    gap: 10,
+    transition: "opacity 120ms, transform 120ms"
   },
+  cardDragging: { opacity: 0.4 },
   cardName: { fontWeight: 600, fontSize: 17, marginBottom: 2 },
   field: { display: "flex", flexDirection: "column", gap: 3 },
   fieldLabel: { fontSize: 11, color: "#7a9cc6" },

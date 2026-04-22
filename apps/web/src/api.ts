@@ -1,4 +1,4 @@
-import type { AdvisorKind, Connection, ConnectionInput, DecisionInput, DecisionResult, NextAction } from "./types";
+import type { AdvisorKind, Connection, ConnectionInput, DecisionInput, DecisionResult, NextAction, Stage } from "./types";
 
 const devHeaders: HeadersInit = {
   "X-Dev-User-Id": "web-demo",
@@ -29,6 +29,16 @@ export const api = {
     request<Connection>(`/connections/${id}`, { method: "PUT", body: JSON.stringify(input) }),
   deleteConnection: (id: string) =>
     request<void>(`/connections/${id}`, { method: "DELETE" }),
+  setStage: (id: string, stage: Stage) =>
+    request<Connection>(`/connections/${id}/stage`, {
+      method: "PATCH",
+      body: JSON.stringify({ stage })
+    }),
+  patchConnection: (id: string, patch: Partial<ConnectionInput>) =>
+    request<Connection>(`/connections/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch)
+    }),
   setOverride: (id: string, overrideAction: NextAction | null, overrideReason?: string | null) =>
     request<Connection>(`/connections/${id}/override`, {
       method: "PATCH",

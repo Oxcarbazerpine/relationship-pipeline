@@ -227,6 +227,106 @@ app.put("/connections/:id", authMiddleware, async (req, res) => {
   res.json(withDerivedAction(connection));
 });
 
+const partialConnectionSchema = connectionSchema.partial();
+const decisionRelevantFields = [
+  "stage",
+  "interactionFreq",
+  "initiative",
+  "emotionQuality",
+  "investmentBalance",
+  "offlineStatus",
+  "upgradeSignals"
+] as const;
+
+app.patch("/connections/:id", authMiddleware, async (req, res) => {
+  const user = res.locals.user;
+  const patch = partialConnectionSchema.parse(req.body);
+  const existing = await prisma.connection.findFirst({
+    where: { id: req.params.id, userId: user.id }
+  });
+  if (!existing) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
+  const updateData: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    if (key === "lastInteractionAt" || key === "actionDueAt") {
+      updateData[key] = value ? new Date(value as string) : null;
+    } else {
+      updateData[key] = value;
+    }
+  }
+
+  const touchesDecision = decisionRelevantFields.some((f) => f in patch && patch[f] !== undefined);
+  if (touchesDecision) {
+    const merged = { ...existing, ...patch } as unknown as Record<string, unknown>;
+    const decisionInput: DecisionInput = {
+      stage: merged.stage as DecisionInput["stage"],
+      interactionFreq: merged.interactionFreq as DecisionInput["interactionFreq"],
+      initiative: merged.initiative as DecisionInput["initiative"],
+      emotionQuality: merged.emotionQuality as DecisionInput["emotionQuality"],
+      investmentBalance: merged.investmentBalance as DecisionInput["investmentBalance"],
+      offlineStatus: merged.offlineStatus as DecisionInput["offlineStatus"],
+      upgradeSignals: (merged.upgradeSignals ?? []) as DecisionInput["upgradeSignals"]
+    };
+    const advisorKind = (patch.advisor ?? existing.advisor) as AdvisorKind;
+    const result = await runAdvisor(decisionInput, advisorKind);
+    updateData.suggestedAction = result.nextAction;
+    updateData.suggestedReason = result.reasonCode;
+    updateData.advisor = result.advisor;
+    updateData.advisorReason = result.advisorReason;
+    updateData.priorityScore = result.priorityScore;
+    updateData.priorityAdvice = result.priorityAdvice;
+  }
+
+  const connection = await prisma.connection.update({
+    where: { id: existing.id },
+    data: updateData
+  });
+  res.json(withDerivedAction(connection));
+});
+
+const stageSchema = z.object({
+  stage: z.enum(["INTRO", "COMFORT", "FLIRT", "UPGRADE", "COOLING", "ENDED"])
+});
+
+app.patch("/connections/:id/stage", authMiddleware, async (req, res) => {
+  const user = res.locals.user;
+  const { stage } = stageSchema.parse(req.body);
+  const existing = await prisma.connection.findFirst({
+    where: { id: req.params.id, userId: user.id }
+  });
+  if (!existing) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  const decisionInput: DecisionInput = {
+    stage,
+    interactionFreq: existing.interactionFreq as DecisionInput["interactionFreq"],
+    initiative: existing.initiative as DecisionInput["initiative"],
+    emotionQuality: existing.emotionQuality as DecisionInput["emotionQuality"],
+    investmentBalance: existing.investmentBalance as DecisionInput["investmentBalance"],
+    offlineStatus: existing.offlineStatus as DecisionInput["offlineStatus"],
+    upgradeSignals: (existing.upgradeSignals ?? []) as DecisionInput["upgradeSignals"]
+  };
+  const result = await runAdvisor(decisionInput, existing.advisor as AdvisorKind);
+  const connection = await prisma.connection.update({
+    where: { id: existing.id },
+    data: {
+      stage,
+      suggestedAction: result.nextAction,
+      suggestedReason: result.reasonCode,
+      advisor: result.advisor,
+      advisorReason: result.advisorReason,
+      priorityScore: result.priorityScore,
+      priorityAdvice: result.priorityAdvice
+    }
+  });
+  res.json(withDerivedAction(connection));
+});
+
 const overrideSchema = z.object({
   overrideAction: nextActionEnum.nullable(),
   overrideReason: z.string().nullable().optional()
