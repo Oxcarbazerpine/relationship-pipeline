@@ -84,13 +84,11 @@ export function ActionCalendar() {
   return (
     <div style={styles.page}>
       <div style={styles.breadcrumb}>
-        <span style={{ color: "#7a9cc6" }}>Action</span>
+        <span style={{ color: "#7a9cc6" }}>{t("nav.action")}</span>
         <span style={{ color: "#546e87" }}> › </span>
         <span>{t("nav.actionCalendar")}</span>
       </div>
-      <div style={styles.description}>
-        Visualize and manage upcoming and overdue next actions for each relationship
-      </div>
+      <div style={styles.description}>{t("page.calendarDesc")}</div>
 
       <div style={styles.filterBar}>
         <select

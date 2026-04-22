@@ -144,16 +144,13 @@ export function InsightsDashboard() {
   return (
     <div style={styles.page}>
       <div style={styles.breadcrumb}>
-        <span style={{ color: "#7a9cc6" }}>Insights</span>
+        <span style={{ color: "#7a9cc6" }}>{t("nav.insights")}</span>
         <span style={{ color: "#546e87" }}> › </span>
         <span>{t("nav.insightsDashboard")}</span>
       </div>
 
-      <h2 style={styles.title}>Connection Pipeline Overview</h2>
-      <p style={styles.description}>
-        Aggregate and visualize key metrics to evaluate relationship stage distribution,
-        interaction frequency, emotional quality, and action completion rates.
-      </p>
+      <h2 style={styles.title}>{t("page.dashboardTitle")}</h2>
+      <p style={styles.description}>{t("page.dashboardDesc")}</p>
 
       <div style={styles.filterBar}>
         <Select value={stageFilter} onChange={(v) => setStageFilter(v as Stage | "")} label={t("stage")}

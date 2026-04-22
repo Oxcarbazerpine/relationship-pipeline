@@ -118,7 +118,7 @@ export function RelationshipList() {
       <div style={styles.header}>
         <div>
           <div style={styles.breadcrumb}>
-            <span style={{ color: "#7a9cc6" }}>Pipeline</span>
+            <span style={{ color: "#7a9cc6" }}>{t("nav.pipeline")}</span>
             <span style={{ color: "#546e87" }}> › </span>
             <span>{t("nav.pipelineList")}</span>
           </div>
@@ -296,7 +296,7 @@ function NextActionCell({
     value: a,
     label: t(`NextAction.${a}`),
     color: nextActionColor[a],
-    recommendedTag: a === c.suggestedAction ? `★ ${t("Advisor." + c.advisor)} ${t("recommended") || "推荐"}` : undefined
+    recommendedTag: a === c.suggestedAction ? `★ ${t(`Advisor.${c.advisor}`)} ${t("recommended")}` : undefined
   }));
   return (
     <EditableChipCell<NextAction>
@@ -304,7 +304,7 @@ function NextActionCell({
       options={options}
       onChange={(v) => onPick(c.id, v, c.suggestedAction)}
       onClear={c.isOverridden ? () => onClear(c.id) : undefined}
-      clearLabel={t("clearOverride") || "清除手动覆盖 (回到推荐)"}
+      clearLabel={t("clearOverride")}
     />
   );
 }

@@ -103,14 +103,12 @@ export function StageKanban() {
   return (
     <div style={styles.page}>
       <div style={styles.breadcrumb}>
-        <span style={{ color: "#7a9cc6" }}>Pipeline</span>
+        <span style={{ color: "#7a9cc6" }}>{t("nav.pipeline")}</span>
         <span style={{ color: "#546e87" }}> › </span>
         <span>{t("nav.pipelineKanban")}</span>
       </div>
 
-      <div style={styles.description}>
-        Visualize and manage relationship records by moving them across stages
-      </div>
+      <div style={styles.description}>{t("page.kanbanDesc")}</div>
 
       <div style={styles.filterBar}>
         <select

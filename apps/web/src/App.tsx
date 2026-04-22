@@ -1,17 +1,11 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import "./i18n";
+import { supportedLanguages } from "./i18n";
 import { Sidebar } from "./components/Sidebar";
 import { StageKanban } from "./pages/StageKanban";
 import { RelationshipList } from "./pages/RelationshipList";
 import { ActionCalendar } from "./pages/ActionCalendar";
 import { InsightsDashboard } from "./pages/InsightsDashboard";
-
-const languages = [
-  { value: "zh", label: "中文" },
-  { value: "en", label: "English" },
-  { value: "ja", label: "日本語" }
-];
 
 export default function App() {
   const { i18n } = useTranslation();
@@ -27,7 +21,7 @@ export default function App() {
               onChange={(e) => i18n.changeLanguage(e.target.value)}
               style={styles.langSelect}
             >
-              {languages.map((o) => (
+              {supportedLanguages.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>

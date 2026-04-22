@@ -29,7 +29,7 @@ export function Sidebar() {
   const { t } = useTranslation();
   return (
     <nav style={styles.nav}>
-      <div style={styles.logo}>Connection Pipeline</div>
+      <div style={styles.logo}>{t("title")}</div>
 
       <div style={styles.section}>
         <div style={{ ...sectionStyle, color: "#cfe1f2", fontSize: 14, fontWeight: 600 }}>
