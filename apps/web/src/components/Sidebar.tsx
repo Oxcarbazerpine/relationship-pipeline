@@ -17,6 +17,10 @@ interface NavSection {
 
 const sections: NavSection[] = [
   {
+    titleKey: "nav.insights",
+    items: [{ to: "/insights/dashboard", icon: "📊", labelKey: "nav.insightsDashboard" }]
+  },
+  {
     titleKey: "nav.pipeline",
     items: [
       { to: "/pipeline/list", icon: "📋", labelKey: "nav.pipelineList" },
@@ -28,8 +32,8 @@ const sections: NavSection[] = [
     items: [{ to: "/action/calendar", icon: "📅", labelKey: "nav.actionCalendar" }]
   },
   {
-    titleKey: "nav.insights",
-    items: [{ to: "/insights/dashboard", icon: "📊", labelKey: "nav.insightsDashboard" }]
+    titleKey: "nav.settings",
+    items: [{ to: "/settings/channels", icon: "⚙", labelKey: "nav.channels" }]
   }
 ];
 

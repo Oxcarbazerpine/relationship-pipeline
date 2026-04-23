@@ -1,4 +1,4 @@
-import type { AdvisorKind, Connection, ConnectionInput, DecisionInput, DecisionResult, NextAction, Stage } from "./types";
+import type { AdvisorKind, Channel, Connection, ConnectionInput, DecisionInput, DecisionResult, NextAction, Stage } from "./types";
 
 const devHeaders: HeadersInit = {
   "X-Dev-User-Id": "web-demo",
@@ -44,6 +44,13 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ overrideAction, overrideReason })
     }),
+  listChannels: () => request<Channel[]>("/channels"),
+  createChannel: (input: { name: string; color?: string }) =>
+    request<Channel>("/channels", { method: "POST", body: JSON.stringify(input) }),
+  updateChannel: (id: string, patch: { name?: string; color?: string; order?: number }) =>
+    request<Channel>(`/channels/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteChannel: (id: string) =>
+    request<void>(`/channels/${id}`, { method: "DELETE" }),
   decide: (input: DecisionInput) =>
     request<DecisionResult>("/decide", { method: "POST", body: JSON.stringify(input) }),
   testAdvisor: async (kind: AdvisorKind): Promise<{ ok: boolean; kind: AdvisorKind; error?: string }> => {

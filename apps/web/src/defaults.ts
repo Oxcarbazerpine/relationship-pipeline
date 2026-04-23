@@ -9,5 +9,6 @@ export const defaultConnectionInput: ConnectionInput = {
   investmentBalance: "BALANCED",
   offlineStatus: "NEVER",
   upgradeSignals: [],
-  advisor: "RULES"
+  advisor: "RULES",
+  channelId: null
 };

@@ -112,7 +112,8 @@ const connectionSchema = z.object({
   overrideReason: z.string().nullable().optional(),
   actionDueAt: z.string().datetime().optional().nullable(),
   notes: z.string().nullable().optional(),
-  advisor: z.enum(["RULES", "AI"]).optional().default("RULES")
+  advisor: z.enum(["RULES", "AI"]).optional().default("RULES"),
+  channelId: z.string().nullable().optional()
 });
 
 type ConnectionRow = {
@@ -155,6 +156,102 @@ app.post("/advisor/test", authMiddleware, async (req, res) => {
   } catch (e) {
     res.status(500).json({ ok: false, kind, error: (e as Error).message });
   }
+});
+
+const defaultChannels = [
+  { name: "约会 APP", color: "blueLight2" },
+  { name: "搭讪", color: "cyanLight2" },
+  { name: "介绍", color: "tealLight2" }
+];
+
+async function ensureDefaultChannels(userId: string) {
+  const count = await prisma.channel.count({ where: { userId } });
+  if (count > 0) return;
+  await prisma.channel.createMany({
+    data: defaultChannels.map((d, i) => ({ userId, name: d.name, color: d.color, order: i }))
+  });
+}
+
+app.get("/channels", authMiddleware, async (_req, res) => {
+  const user = res.locals.user;
+  await ensureDefaultChannels(user.id);
+  const channels = await prisma.channel.findMany({
+    where: { userId: user.id },
+    orderBy: [{ order: "asc" }, { createdAt: "asc" }]
+  });
+  res.json(channels);
+});
+
+const channelCreateSchema = z.object({
+  name: z.string().min(1).max(50),
+  color: z.string().optional()
+});
+
+app.post("/channels", authMiddleware, async (req, res) => {
+  const user = res.locals.user;
+  const data = channelCreateSchema.parse(req.body);
+  try {
+    const max = await prisma.channel.aggregate({
+      where: { userId: user.id },
+      _max: { order: true }
+    });
+    const channel = await prisma.channel.create({
+      data: {
+        userId: user.id,
+        name: data.name,
+        color: data.color ?? "blueLight2",
+        order: (max._max.order ?? -1) + 1
+      }
+    });
+    res.status(201).json(channel);
+  } catch (e) {
+    if ((e as { code?: string }).code === "P2002") {
+      res.status(409).json({ error: "Channel name already exists" });
+      return;
+    }
+    throw e;
+  }
+});
+
+const channelPatchSchema = z.object({
+  name: z.string().min(1).max(50).optional(),
+  color: z.string().optional(),
+  order: z.number().int().optional()
+});
+
+app.patch("/channels/:id", authMiddleware, async (req, res) => {
+  const user = res.locals.user;
+  const data = channelPatchSchema.parse(req.body);
+  const existing = await prisma.channel.findFirst({
+    where: { id: req.params.id, userId: user.id }
+  });
+  if (!existing) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  try {
+    const channel = await prisma.channel.update({ where: { id: existing.id }, data });
+    res.json(channel);
+  } catch (e) {
+    if ((e as { code?: string }).code === "P2002") {
+      res.status(409).json({ error: "Channel name already exists" });
+      return;
+    }
+    throw e;
+  }
+});
+
+app.delete("/channels/:id", authMiddleware, async (req, res) => {
+  const user = res.locals.user;
+  const existing = await prisma.channel.findFirst({
+    where: { id: req.params.id, userId: user.id }
+  });
+  if (!existing) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  await prisma.channel.delete({ where: { id: existing.id } });
+  res.status(204).end();
 });
 
 app.get("/connections", authMiddleware, async (_req, res) => {

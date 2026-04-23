@@ -50,7 +50,8 @@ export const en: TranslationResources = {
     emotionQuality: "Emotion quality",
     investmentBalance: "Investment balance",
     offlineStatus: "Offline status",
-    upgradeSignals: "Upgrade signals"
+    upgradeSignals: "Upgrade signals",
+    channel: "Channel"
   },
 
   nav: {
@@ -61,7 +62,19 @@ export const en: TranslationResources = {
     actionCalendar: "Action calendar",
     actionTimeline: "Action timeline",
     insights: "Insights",
-    insightsDashboard: "Pipeline dashboard"
+    insightsDashboard: "Pipeline dashboard",
+    settings: "Settings",
+    channels: "Channels"
+  },
+
+  channel: {
+    pageTitle: "Acquaintance channels",
+    pageDesc: "Manage the tags you use to record how you met each person. Defaults: APP, Cold approach, Introduction — add, rename, or delete freely.",
+    addPlaceholder: "New channel name",
+    addBtn: "+ Add channel",
+    color: "Color",
+    inUseWarning: "This channel is in use. Deleting it will clear the channel on those records.",
+    empty: "No channels yet"
   },
 
   page: {

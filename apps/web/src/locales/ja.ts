@@ -50,7 +50,8 @@ export const ja: TranslationResources = {
     emotionQuality: "感情の質",
     investmentBalance: "投入バランス",
     offlineStatus: "対面状況",
-    upgradeSignals: "昇格シグナル"
+    upgradeSignals: "昇格シグナル",
+    channel: "出会い経路"
   },
 
   nav: {
@@ -61,7 +62,19 @@ export const ja: TranslationResources = {
     actionCalendar: "アクションカレンダー",
     actionTimeline: "アクションタイムライン",
     insights: "インサイト",
-    insightsDashboard: "ダッシュボード"
+    insightsDashboard: "ダッシュボード",
+    settings: "設定",
+    channels: "出会い経路"
+  },
+
+  channel: {
+    pageTitle: "出会い経路",
+    pageDesc: "各相手との出会い方を記録するタグを管理します。デフォルトは APP / ナンパ / 紹介。自由に追加・変更・削除できます。",
+    addPlaceholder: "新しい経路名",
+    addBtn: "+ 経路を追加",
+    color: "色",
+    inUseWarning: "この経路は使用中です。削除すると該当レコードの経路は空になります。",
+    empty: "経路がありません"
   },
 
   page: {

@@ -17,6 +17,8 @@ import { Chip } from "../components/Chip";
 import { EditableChipCell, EditableMultiChipCell, type ChipOption } from "../components/EditableChipCell";
 import { RecordDetailPanel } from "../components/RecordDetailPanel";
 import { defaultConnectionInput } from "../defaults";
+import { useChannels } from "../ChannelsContext";
+import type { AirtableColor } from "../airtableColors";
 import {
   emotionColor,
   initiativeColor,
@@ -40,6 +42,7 @@ const nextActionOptions: NextAction[] = ["KEEP_CHAT", "LIGHT_UPGRADE", "CLEAR_IN
 
 export function RelationshipList() {
   const { t } = useTranslation();
+  const { channels } = useChannels();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -192,6 +195,7 @@ export function RelationshipList() {
               <th style={styles.th}>{t("fields.initiative")}</th>
               <th style={styles.th}>{t("fields.emotionQuality")}</th>
               <th style={styles.th}>{t("fields.investmentBalance")}</th>
+              <th style={styles.th}>{t("fields.channel")}</th>
               <th style={styles.th}>{t("fields.offlineStatus")}</th>
               <th style={styles.th}>{t("fields.upgradeSignals")}</th>
               <th style={styles.th}>{t("nextAction")}</th>
@@ -202,9 +206,9 @@ export function RelationshipList() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={12} style={styles.emptyCell}>...</td></tr>
+              <tr><td colSpan={13} style={styles.emptyCell}>...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={12} style={styles.emptyCell}>{t("empty")}</td></tr>
+              <tr><td colSpan={13} style={styles.emptyCell}>{t("empty")}</td></tr>
             ) : (
               filtered.map((c) => (
                 <tr
@@ -249,6 +253,19 @@ export function RelationshipList() {
                       value={c.investmentBalance}
                       options={investmentOptions.map((i) => ({ value: i, label: t(`InvestmentBalance.${i}`), color: investmentColor[i] }))}
                       onChange={(v) => applyPatch(c.id, { investmentBalance: v })}
+                    />
+                  </td>
+                  <td style={styles.td}>
+                    <EditableChipCell<string>
+                      value={c.channelId ?? ""}
+                      options={channels.map((ch) => ({
+                        value: ch.id,
+                        label: ch.name,
+                        color: ch.color as AirtableColor
+                      }))}
+                      onChange={(v) => applyPatch(c.id, { channelId: v || null })}
+                      onClear={c.channelId ? () => applyPatch(c.id, { channelId: null }) : undefined}
+                      fallbackLabel="—"
                     />
                   </td>
                   <td style={styles.td}>

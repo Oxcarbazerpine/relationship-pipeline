@@ -24,6 +24,14 @@ export interface DecisionResult {
   reasonCode: string;
 }
 
+export interface Channel {
+  id: string;
+  name: string;
+  color: string;
+  order: number;
+  createdAt?: string;
+}
+
 export interface Connection extends DecisionInput {
   id: string;
   name: string;
@@ -40,6 +48,7 @@ export interface Connection extends DecisionInput {
   priorityAdvice: PriorityAdvice;
   advisor: AdvisorKind;
   advisorReason: string | null;
+  channelId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -52,4 +61,5 @@ export interface ConnectionInput extends DecisionInput {
   overrideReason?: string | null;
   notes?: string | null;
   advisor?: AdvisorKind;
+  channelId?: string | null;
 }

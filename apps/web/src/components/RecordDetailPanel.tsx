@@ -14,6 +14,8 @@ import type {
 } from "../types";
 import { EditableChipCell, EditableMultiChipCell, type ChipOption } from "./EditableChipCell";
 import { Chip } from "./Chip";
+import { useChannels } from "../ChannelsContext";
+import type { AirtableColor } from "../airtableColors";
 import {
   emotionColor,
   initiativeColor,
@@ -61,12 +63,14 @@ function toInput(c: Connection): ConnectionInput {
     overrideReason: c.overrideReason,
     actionDueAt: c.actionDueAt,
     notes: c.notes,
-    advisor: c.advisor
+    advisor: c.advisor,
+    channelId: c.channelId
   };
 }
 
 export function RecordDetailPanel({ mode, connection, onSave, onClose, onDelete }: Props) {
   const { t } = useTranslation();
+  const { channels } = useChannels();
   const isNew = mode === "new";
   const [draft, setDraft] = useState<ConnectionInput>(() =>
     connection ? toInput(connection) : { ...defaultConnectionInput }
@@ -219,6 +223,20 @@ export function RecordDetailPanel({ mode, connection, onSave, onClose, onDelete 
               value={draft.investmentBalance}
               options={investmentOptions.map((i) => ({ value: i, label: t(`InvestmentBalance.${i}`), color: investmentColor[i] }))}
               onChange={(v) => update("investmentBalance", v)}
+            />
+          </Row>
+
+          <Row label={t("fields.channel")}>
+            <EditableChipCell<string>
+              value={draft.channelId ?? ""}
+              options={channels.map((ch) => ({
+                value: ch.id,
+                label: ch.name,
+                color: ch.color as AirtableColor
+              }))}
+              onChange={(v) => update("channelId", v || null)}
+              onClear={draft.channelId ? () => update("channelId", null) : undefined}
+              fallbackLabel="—"
             />
           </Row>
 

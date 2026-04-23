@@ -1,40 +1,45 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { supportedLanguages } from "./i18n";
+import { ChannelsProvider } from "./ChannelsContext";
 import { Sidebar } from "./components/Sidebar";
 import { StageKanban } from "./pages/StageKanban";
 import { RelationshipList } from "./pages/RelationshipList";
 import { ActionCalendar } from "./pages/ActionCalendar";
 import { InsightsDashboard } from "./pages/InsightsDashboard";
+import { ChannelsSettings } from "./pages/ChannelsSettings";
 
 export default function App() {
   const { i18n } = useTranslation();
 
   return (
     <BrowserRouter>
-      <div style={styles.shell}>
-        <Sidebar />
-        <div style={styles.main}>
-          <div style={styles.topbar}>
-            <select
-              value={i18n.language}
-              onChange={(e) => i18n.changeLanguage(e.target.value)}
-              style={styles.langSelect}
-            >
-              {supportedLanguages.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+      <ChannelsProvider>
+        <div style={styles.shell}>
+          <Sidebar />
+          <div style={styles.main}>
+            <div style={styles.topbar}>
+              <select
+                value={i18n.language}
+                onChange={(e) => i18n.changeLanguage(e.target.value)}
+                style={styles.langSelect}
+              >
+                {supportedLanguages.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <Routes>
+              <Route path="/" element={<Navigate to="/insights/dashboard" replace />} />
+              <Route path="/pipeline/list" element={<RelationshipList />} />
+              <Route path="/pipeline/kanban" element={<StageKanban />} />
+              <Route path="/action/calendar" element={<ActionCalendar />} />
+              <Route path="/insights/dashboard" element={<InsightsDashboard />} />
+              <Route path="/settings/channels" element={<ChannelsSettings />} />
+            </Routes>
           </div>
-          <Routes>
-            <Route path="/" element={<Navigate to="/pipeline/kanban" replace />} />
-            <Route path="/pipeline/list" element={<RelationshipList />} />
-            <Route path="/pipeline/kanban" element={<StageKanban />} />
-            <Route path="/action/calendar" element={<ActionCalendar />} />
-            <Route path="/insights/dashboard" element={<InsightsDashboard />} />
-          </Routes>
         </div>
-      </div>
+      </ChannelsProvider>
     </BrowserRouter>
   );
 }

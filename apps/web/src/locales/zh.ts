@@ -48,7 +48,8 @@ export const zh = {
     emotionQuality: "情绪质量",
     investmentBalance: "投入一致性",
     offlineStatus: "线下状态",
-    upgradeSignals: "升级信号"
+    upgradeSignals: "升级信号",
+    channel: "认识渠道"
   },
 
   nav: {
@@ -59,7 +60,19 @@ export const zh = {
     actionCalendar: "行动日历",
     actionTimeline: "行动时间线",
     insights: "洞察",
-    insightsDashboard: "管道仪表盘"
+    insightsDashboard: "管道仪表盘",
+    settings: "设置",
+    channels: "认识渠道"
+  },
+
+  channel: {
+    pageTitle: "认识渠道",
+    pageDesc: "管理你用来记录如何认识每个人的渠道标签。默认提供 APP、搭讪、介绍,可任意增删改。",
+    addPlaceholder: "新渠道名称",
+    addBtn: "+ 新增渠道",
+    color: "颜色",
+    inUseWarning: "此渠道已被使用,删除后相关记录的渠道会清空",
+    empty: "暂无渠道"
   },
 
   page: {
