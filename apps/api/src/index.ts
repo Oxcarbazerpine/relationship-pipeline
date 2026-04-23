@@ -6,6 +6,8 @@ import { z } from "zod";
 import { PrismaClient } from "@prisma/client";
 import { decide, type DecisionInput } from "./decision.js";
 import { createAdvisor, type AdvisorKind } from "./advisor.js";
+import { connectionSchema, createConnectionsRouter } from "./routes/connections.js";
+import { createChannelsRouter } from "./routes/channels.js";
 
 dotenv.config({ override: true });
 
@@ -42,7 +44,7 @@ async function getOrCreateUser(authUser: AuthUser) {
   });
 }
 
-async function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+const authMiddleware: express.RequestHandler = async (req, res, next) => {
   try {
     if (authMode === "dev") {
       const devUserId = req.header("x-dev-user-id") ?? "dev-user";
@@ -77,7 +79,7 @@ async function authMiddleware(req: express.Request, res: express.Response, next:
   } catch (error) {
     res.status(401).json({ error: "Unauthorized" });
   }
-}
+};
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
@@ -94,42 +96,6 @@ app.get("/me", authMiddleware, (req, res) => {
     subscriptionId: user.subscriptionId
   });
 });
-
-const nextActionEnum = z.enum(["KEEP_CHAT", "LIGHT_UPGRADE", "CLEAR_INVITE", "SLOW_DOWN", "OBSERVE", "END"]);
-
-const connectionSchema = z.object({
-  name: z.string().min(1),
-  stage: z.enum(["INTRO", "COMFORT", "FLIRT", "UPGRADE", "COOLING", "ENDED"]),
-  lastInteractionAt: z.string().datetime().optional().nullable(),
-  interactionFreq: z.enum(["HIGH", "MEDIUM", "LOW", "NONE"]),
-  initiative: z.enum(["SELF", "OTHER", "BALANCED"]),
-  emotionQuality: z.enum(["NEUTRAL", "POSITIVE", "VOLATILE", "DRAINING"]),
-  investmentBalance: z.enum(["SELF_MORE", "BALANCED", "OTHER_MORE"]),
-  offlineStatus: z.enum(["NEVER", "ONCE", "MULTIPLE"]),
-  upgradeSignals: z.array(z.enum(["CARE", "INVITE", "TIME_GIVE", "BODY_LANGUAGE", "EMOTIONAL_DEPENDENCE"]))
-    .default([]),
-  overrideAction: nextActionEnum.nullable().optional(),
-  overrideReason: z.string().nullable().optional(),
-  actionDueAt: z.string().datetime().optional().nullable(),
-  notes: z.string().nullable().optional(),
-  advisor: z.enum(["RULES", "AI"]).optional().default("RULES"),
-  channelId: z.string().nullable().optional()
-});
-
-type ConnectionRow = {
-  suggestedAction: string;
-  suggestedReason: string;
-  overrideAction: string | null;
-  overrideReason: string | null;
-} & Record<string, unknown>;
-
-function withDerivedAction<T extends ConnectionRow>(row: T) {
-  return {
-    ...row,
-    nextAction: row.overrideAction ?? row.suggestedAction,
-    isOverridden: row.overrideAction !== null && row.overrideAction !== undefined
-  };
-}
 
 const decideSchema = connectionSchema.pick({
   stage: true,
@@ -158,297 +124,8 @@ app.post("/advisor/test", authMiddleware, async (req, res) => {
   }
 });
 
-const defaultChannels = [
-  { name: "约会 APP", color: "blueLight2" },
-  { name: "搭讪", color: "cyanLight2" },
-  { name: "介绍", color: "tealLight2" }
-];
-
-async function ensureDefaultChannels(userId: string) {
-  const count = await prisma.channel.count({ where: { userId } });
-  if (count > 0) return;
-  await prisma.channel.createMany({
-    data: defaultChannels.map((d, i) => ({ userId, name: d.name, color: d.color, order: i }))
-  });
-}
-
-app.get("/channels", authMiddleware, async (_req, res) => {
-  const user = res.locals.user;
-  await ensureDefaultChannels(user.id);
-  const channels = await prisma.channel.findMany({
-    where: { userId: user.id },
-    orderBy: [{ order: "asc" }, { createdAt: "asc" }]
-  });
-  res.json(channels);
-});
-
-const channelCreateSchema = z.object({
-  name: z.string().min(1).max(50),
-  color: z.string().optional()
-});
-
-app.post("/channels", authMiddleware, async (req, res) => {
-  const user = res.locals.user;
-  const data = channelCreateSchema.parse(req.body);
-  try {
-    const max = await prisma.channel.aggregate({
-      where: { userId: user.id },
-      _max: { order: true }
-    });
-    const channel = await prisma.channel.create({
-      data: {
-        userId: user.id,
-        name: data.name,
-        color: data.color ?? "blueLight2",
-        order: (max._max.order ?? -1) + 1
-      }
-    });
-    res.status(201).json(channel);
-  } catch (e) {
-    if ((e as { code?: string }).code === "P2002") {
-      res.status(409).json({ error: "Channel name already exists" });
-      return;
-    }
-    throw e;
-  }
-});
-
-const channelPatchSchema = z.object({
-  name: z.string().min(1).max(50).optional(),
-  color: z.string().optional(),
-  order: z.number().int().optional()
-});
-
-app.patch("/channels/:id", authMiddleware, async (req, res) => {
-  const user = res.locals.user;
-  const data = channelPatchSchema.parse(req.body);
-  const existing = await prisma.channel.findFirst({
-    where: { id: req.params.id, userId: user.id }
-  });
-  if (!existing) {
-    res.status(404).json({ error: "Not found" });
-    return;
-  }
-  try {
-    const channel = await prisma.channel.update({ where: { id: existing.id }, data });
-    res.json(channel);
-  } catch (e) {
-    if ((e as { code?: string }).code === "P2002") {
-      res.status(409).json({ error: "Channel name already exists" });
-      return;
-    }
-    throw e;
-  }
-});
-
-app.delete("/channels/:id", authMiddleware, async (req, res) => {
-  const user = res.locals.user;
-  const existing = await prisma.channel.findFirst({
-    where: { id: req.params.id, userId: user.id }
-  });
-  if (!existing) {
-    res.status(404).json({ error: "Not found" });
-    return;
-  }
-  await prisma.channel.delete({ where: { id: existing.id } });
-  res.status(204).end();
-});
-
-app.get("/connections", authMiddleware, async (_req, res) => {
-  const user = res.locals.user;
-  const connections = await prisma.connection.findMany({
-    where: { userId: user.id },
-    orderBy: { updatedAt: "desc" }
-  });
-  res.json(connections.map(withDerivedAction));
-});
-
-async function runAdvisor(input: DecisionInput, kind: AdvisorKind) {
-  try {
-    const advisor = createAdvisor(kind);
-    return await advisor.advise(input);
-  } catch (e) {
-    if (kind === "AI") {
-      const fallback = await createAdvisor("RULES").advise(input);
-      return { ...fallback, advisorReason: `AI failed, used rules: ${(e as Error).message}` };
-    }
-    throw e;
-  }
-}
-
-app.post("/connections", authMiddleware, async (req, res) => {
-  const user = res.locals.user;
-  const data = connectionSchema.parse(req.body);
-  const result = await runAdvisor(data as DecisionInput, data.advisor);
-  const connection = await prisma.connection.create({
-    data: {
-      ...data,
-      suggestedAction: result.nextAction,
-      suggestedReason: result.reasonCode,
-      overrideAction: data.overrideAction ?? null,
-      overrideReason: data.overrideReason ?? null,
-      notes: data.notes ?? null,
-      advisor: result.advisor,
-      advisorReason: result.advisorReason,
-      priorityScore: result.priorityScore,
-      priorityAdvice: result.priorityAdvice,
-      lastInteractionAt: data.lastInteractionAt ? new Date(data.lastInteractionAt) : null,
-      actionDueAt: data.actionDueAt ? new Date(data.actionDueAt) : null,
-      userId: user.id
-    }
-  });
-  res.status(201).json(withDerivedAction(connection));
-});
-
-app.put("/connections/:id", authMiddleware, async (req, res) => {
-  const user = res.locals.user;
-  const data = connectionSchema.parse(req.body);
-  const result = await runAdvisor(data as DecisionInput, data.advisor);
-  const connection = await prisma.connection.update({
-    where: { id: req.params.id, userId: user.id },
-    data: {
-      ...data,
-      suggestedAction: result.nextAction,
-      suggestedReason: result.reasonCode,
-      overrideAction: data.overrideAction ?? null,
-      overrideReason: data.overrideReason ?? null,
-      notes: data.notes ?? null,
-      advisor: result.advisor,
-      advisorReason: result.advisorReason,
-      priorityScore: result.priorityScore,
-      priorityAdvice: result.priorityAdvice,
-      lastInteractionAt: data.lastInteractionAt ? new Date(data.lastInteractionAt) : null,
-      actionDueAt: data.actionDueAt ? new Date(data.actionDueAt) : null
-    }
-  });
-  res.json(withDerivedAction(connection));
-});
-
-const partialConnectionSchema = connectionSchema.partial();
-const decisionRelevantFields = [
-  "stage",
-  "interactionFreq",
-  "initiative",
-  "emotionQuality",
-  "investmentBalance",
-  "offlineStatus",
-  "upgradeSignals"
-] as const;
-
-app.patch("/connections/:id", authMiddleware, async (req, res) => {
-  const user = res.locals.user;
-  const patch = partialConnectionSchema.parse(req.body);
-  const existing = await prisma.connection.findFirst({
-    where: { id: req.params.id, userId: user.id }
-  });
-  if (!existing) {
-    res.status(404).json({ error: "Not found" });
-    return;
-  }
-
-  const updateData: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === undefined) continue;
-    if (key === "lastInteractionAt" || key === "actionDueAt") {
-      updateData[key] = value ? new Date(value as string) : null;
-    } else {
-      updateData[key] = value;
-    }
-  }
-
-  const touchesDecision = decisionRelevantFields.some((f) => f in patch && patch[f] !== undefined);
-  if (touchesDecision) {
-    const merged = { ...existing, ...patch } as unknown as Record<string, unknown>;
-    const decisionInput: DecisionInput = {
-      stage: merged.stage as DecisionInput["stage"],
-      interactionFreq: merged.interactionFreq as DecisionInput["interactionFreq"],
-      initiative: merged.initiative as DecisionInput["initiative"],
-      emotionQuality: merged.emotionQuality as DecisionInput["emotionQuality"],
-      investmentBalance: merged.investmentBalance as DecisionInput["investmentBalance"],
-      offlineStatus: merged.offlineStatus as DecisionInput["offlineStatus"],
-      upgradeSignals: (merged.upgradeSignals ?? []) as DecisionInput["upgradeSignals"]
-    };
-    const advisorKind = (patch.advisor ?? existing.advisor) as AdvisorKind;
-    const result = await runAdvisor(decisionInput, advisorKind);
-    updateData.suggestedAction = result.nextAction;
-    updateData.suggestedReason = result.reasonCode;
-    updateData.advisor = result.advisor;
-    updateData.advisorReason = result.advisorReason;
-    updateData.priorityScore = result.priorityScore;
-    updateData.priorityAdvice = result.priorityAdvice;
-  }
-
-  const connection = await prisma.connection.update({
-    where: { id: existing.id },
-    data: updateData
-  });
-  res.json(withDerivedAction(connection));
-});
-
-const stageSchema = z.object({
-  stage: z.enum(["INTRO", "COMFORT", "FLIRT", "UPGRADE", "COOLING", "ENDED"])
-});
-
-app.patch("/connections/:id/stage", authMiddleware, async (req, res) => {
-  const user = res.locals.user;
-  const { stage } = stageSchema.parse(req.body);
-  const existing = await prisma.connection.findFirst({
-    where: { id: req.params.id, userId: user.id }
-  });
-  if (!existing) {
-    res.status(404).json({ error: "Not found" });
-    return;
-  }
-  const decisionInput: DecisionInput = {
-    stage,
-    interactionFreq: existing.interactionFreq as DecisionInput["interactionFreq"],
-    initiative: existing.initiative as DecisionInput["initiative"],
-    emotionQuality: existing.emotionQuality as DecisionInput["emotionQuality"],
-    investmentBalance: existing.investmentBalance as DecisionInput["investmentBalance"],
-    offlineStatus: existing.offlineStatus as DecisionInput["offlineStatus"],
-    upgradeSignals: (existing.upgradeSignals ?? []) as DecisionInput["upgradeSignals"]
-  };
-  const result = await runAdvisor(decisionInput, existing.advisor as AdvisorKind);
-  const connection = await prisma.connection.update({
-    where: { id: existing.id },
-    data: {
-      stage,
-      suggestedAction: result.nextAction,
-      suggestedReason: result.reasonCode,
-      advisor: result.advisor,
-      advisorReason: result.advisorReason,
-      priorityScore: result.priorityScore,
-      priorityAdvice: result.priorityAdvice
-    }
-  });
-  res.json(withDerivedAction(connection));
-});
-
-const overrideSchema = z.object({
-  overrideAction: nextActionEnum.nullable(),
-  overrideReason: z.string().nullable().optional()
-});
-
-app.patch("/connections/:id/override", authMiddleware, async (req, res) => {
-  const user = res.locals.user;
-  const { overrideAction, overrideReason } = overrideSchema.parse(req.body);
-  const connection = await prisma.connection.update({
-    where: { id: req.params.id, userId: user.id },
-    data: {
-      overrideAction,
-      overrideReason: overrideAction === null ? null : overrideReason ?? null
-    }
-  });
-  res.json(withDerivedAction(connection));
-});
-
-app.delete("/connections/:id", authMiddleware, async (req, res) => {
-  const user = res.locals.user;
-  await prisma.connection.delete({
-    where: { id: req.params.id, userId: user.id }
-  });
-  res.status(204).send();
-});
+app.use("/channels", createChannelsRouter(prisma, authMiddleware));
+app.use("/connections", createConnectionsRouter(prisma, authMiddleware));
 
 app.post("/billing/subscribe", authMiddleware, async (_req, res) => {
   res.json({

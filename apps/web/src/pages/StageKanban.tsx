@@ -4,7 +4,6 @@ import { api } from "../api";
 import type { Connection, ConnectionInput, InteractionFrequency, NextAction, Stage } from "../types";
 import { Chip } from "../components/Chip";
 import { RecordDetailPanel } from "../components/RecordDetailPanel";
-import { defaultConnectionInput } from "../defaults";
 import {
   emotionColor,
   initiativeColor,

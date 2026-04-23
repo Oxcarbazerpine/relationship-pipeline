@@ -24,6 +24,7 @@ export const zh = {
   delete: "删除",
   confirmDelete: "确定删除这条记录吗?",
   newConnection: "新增对象",
+  newRecordName: "新对象",
   name: "代号",
   preview: "引擎预览",
   empty: "还没有记录,新建第一个对象开始追踪",

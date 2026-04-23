@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { memo, useEffect, useState, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import type {
@@ -16,7 +16,6 @@ import type {
 import { Chip } from "../components/Chip";
 import { EditableChipCell, EditableMultiChipCell, type ChipOption } from "../components/EditableChipCell";
 import { RecordDetailPanel } from "../components/RecordDetailPanel";
-import { defaultConnectionInput } from "../defaults";
 import { useChannels } from "../ChannelsContext";
 import type { AirtableColor } from "../airtableColors";
 import {
@@ -50,12 +49,15 @@ export function RelationshipList() {
     { mode: "closed", id: null }
   );
   const openId = panelState.mode === "edit" ? panelState.id : null;
-  const setOpenId = (id: string | null) =>
+  const setOpenId = useCallback((id: string | null) => {
     setPanelState(id ? { mode: "edit", id } : { mode: "closed", id: null });
+  }, []);
 
   const [stageFilter, setStageFilter] = useState<Stage | "">("");
   const [freqFilter, setFreqFilter] = useState<InteractionFrequency | "">("");
   const [emotionFilter, setEmotionFilter] = useState<EmotionQuality | "">("");
+  const [channelFilter, setChannelFilter] = useState<string>("");
+  const [query, setQuery] = useState<string>("");
 
   const reload = useCallback(async () => {
     try {
@@ -74,13 +76,17 @@ export function RelationshipList() {
   }, [reload]);
 
   const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
     return connections.filter((c) => {
       if (stageFilter && c.stage !== stageFilter) return false;
       if (freqFilter && c.interactionFreq !== freqFilter) return false;
       if (emotionFilter && c.emotionQuality !== emotionFilter) return false;
+      if (channelFilter === "__none__" && c.channelId) return false;
+      if (channelFilter && channelFilter !== "__none__" && c.channelId !== channelFilter) return false;
+      if (q && !c.name.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [connections, stageFilter, freqFilter, emotionFilter]);
+  }, [connections, stageFilter, freqFilter, emotionFilter, channelFilter, query]);
 
   const handleOverride = async (id: string, action: NextAction | null) => {
     const updated = await api.setOverride(id, action);
@@ -94,17 +100,21 @@ export function RelationshipList() {
   };
 
   const applyPatch = useCallback(async (id: string, patch: Partial<ConnectionInput>) => {
-    const snapshot = connections;
-    setConnections((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } as Connection : c)));
+    let rollback: Connection | undefined;
+    setConnections((cs) => cs.map((c) => {
+      if (c.id !== id) return c;
+      rollback = c;
+      return { ...c, ...patch } as Connection;
+    }));
     try {
       const updated = await api.patchConnection(id, patch);
       setConnections((cs) => cs.map((c) => (c.id === id ? updated : c)));
     } catch (e) {
       console.error(e);
-      setConnections(snapshot);
+      if (rollback) setConnections((cs) => cs.map((c) => (c.id === id ? rollback! : c)));
       setError((e as Error).message);
     }
-  }, [connections]);
+  }, []);
 
   const setNextAction = useCallback(async (id: string, action: NextAction, suggested: NextAction) => {
     if (action === suggested) {
@@ -170,6 +180,22 @@ export function RelationshipList() {
           onChange={(v) => setEmotionFilter(v as EmotionQuality | "")}
           options={emotionOptions.map((e) => ({ value: e, label: t(`EmotionQuality.${e}`) }))}
         />
+        <FilterSelect
+          label={t("fields.channel")}
+          value={channelFilter}
+          onChange={setChannelFilter}
+          options={[
+            ...channels.map((ch) => ({ value: ch.id, label: ch.name })),
+            { value: "__none__", label: "— " + t("noSignals") + " —" }
+          ]}
+        />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("fields.stageName") as string}
+          style={styles.searchInput}
+        />
         <span style={styles.recordCount}>
           {filtered.length} / {connections.length}
         </span>
@@ -211,93 +237,16 @@ export function RelationshipList() {
               <tr><td colSpan={13} style={styles.emptyCell}>{t("empty")}</td></tr>
             ) : (
               filtered.map((c) => (
-                <tr
+                <ListRow
                   key={c.id}
-                  style={styles.row}
-                  onClick={() => setOpenId(c.id)}
-                >
-                  <td style={styles.td}>
-                    <div style={styles.stageCell}>
-                      <EditableChipCell<Stage>
-                        value={c.stage}
-                        options={stageOptions.map((s) => ({ value: s, label: t(`Stage.${s}`), color: stageColor[s] }))}
-                        onChange={(v) => applyPatch(c.id, { stage: v })}
-                      />
-                      <span style={styles.name}>{c.name}</span>
-                    </div>
-                  </td>
-                  <td style={styles.td}>{c.lastInteractionAt?.slice(0, 10) ?? "—"}</td>
-                  <td style={styles.td}>
-                    <EditableChipCell<InteractionFrequency>
-                      value={c.interactionFreq}
-                      options={freqOptions.map((f) => ({ value: f, label: t(`InteractionFrequency.${f}`), color: interactionFreqColor[f] }))}
-                      onChange={(v) => applyPatch(c.id, { interactionFreq: v })}
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <EditableChipCell<InitiativeDirection>
-                      value={c.initiative}
-                      options={initiativeOptions.map((i) => ({ value: i, label: t(`InitiativeDirection.${i}`), color: initiativeColor[i] }))}
-                      onChange={(v) => applyPatch(c.id, { initiative: v })}
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <EditableChipCell<EmotionQuality>
-                      value={c.emotionQuality}
-                      options={emotionOptions.map((e) => ({ value: e, label: t(`EmotionQuality.${e}`), color: emotionColor[e] }))}
-                      onChange={(v) => applyPatch(c.id, { emotionQuality: v })}
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <EditableChipCell<InvestmentBalance>
-                      value={c.investmentBalance}
-                      options={investmentOptions.map((i) => ({ value: i, label: t(`InvestmentBalance.${i}`), color: investmentColor[i] }))}
-                      onChange={(v) => applyPatch(c.id, { investmentBalance: v })}
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <EditableChipCell<string>
-                      value={c.channelId ?? ""}
-                      options={channels.map((ch) => ({
-                        value: ch.id,
-                        label: ch.name,
-                        color: ch.color as AirtableColor
-                      }))}
-                      onChange={(v) => applyPatch(c.id, { channelId: v || null })}
-                      onClear={c.channelId ? () => applyPatch(c.id, { channelId: null }) : undefined}
-                      fallbackLabel="—"
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <EditableChipCell<OfflineStatus>
-                      value={c.offlineStatus}
-                      options={offlineOptions.map((o) => ({ value: o, label: t(`OfflineStatus.${o}`), color: offlineColor[o] }))}
-                      onChange={(v) => applyPatch(c.id, { offlineStatus: v })}
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <EditableMultiChipCell<UpgradeSignal>
-                      values={c.upgradeSignals}
-                      options={upgradeOptions.map((u) => ({ value: u, label: t(`UpgradeSignal.${u}`), color: upgradeSignalColor[u] }))}
-                      onChange={(v) => applyPatch(c.id, { upgradeSignals: v })}
-                      emptyChip={{ label: t("noSignals"), color: "orangeLight2" }}
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <NextActionCell connection={c} t={t} onPick={setNextAction} onClear={clearOverride} />
-                  </td>
-                  <td style={styles.td}>{c.actionDueAt?.slice(0, 10) ?? "—"}</td>
-                  <td style={styles.td}>
-                    <Chip label={t(`Priority.${c.priorityAdvice}`)} color={priorityColor[c.priorityAdvice]} />
-                    <span style={styles.scoreText}> · {c.priorityScore}</span>
-                  </td>
-                  <td style={styles.td}>
-                    <Chip
-                      label={t(`Advisor.${c.advisor}`)}
-                      color={c.advisor === "AI" ? "greenLight2" : "blueLight2"}
-                    />
-                  </td>
-                </tr>
+                  c={c}
+                  channels={channels}
+                  t={t}
+                  onOpen={setOpenId}
+                  applyPatch={applyPatch}
+                  setNextAction={setNextAction}
+                  clearOverride={clearOverride}
+                />
               ))
             )}
           </tbody>
@@ -306,6 +255,97 @@ export function RelationshipList() {
     </div>
   );
 }
+
+interface ListRowProps {
+  c: Connection;
+  channels: ReturnType<typeof useChannels>["channels"];
+  t: (k: string, o?: Record<string, unknown>) => string;
+  onOpen: (id: string) => void;
+  applyPatch: (id: string, patch: Partial<ConnectionInput>) => Promise<void>;
+  setNextAction: (id: string, action: NextAction, suggested: NextAction) => Promise<void>;
+  clearOverride: (id: string) => Promise<void>;
+}
+
+const ListRow = memo(function ListRow({ c, channels, t, onOpen, applyPatch, setNextAction, clearOverride }: ListRowProps) {
+  return (
+    <tr style={styles.row} onClick={() => onOpen(c.id)}>
+      <td style={styles.td}>
+        <div style={styles.stageCell}>
+          <EditableChipCell<Stage>
+            value={c.stage}
+            options={stageOptions.map((s) => ({ value: s, label: t(`Stage.${s}`), color: stageColor[s] }))}
+            onChange={(v) => applyPatch(c.id, { stage: v })}
+          />
+          <span style={styles.name}>{c.name}</span>
+        </div>
+      </td>
+      <td style={styles.td}>{c.lastInteractionAt?.slice(0, 10) ?? "—"}</td>
+      <td style={styles.td}>
+        <EditableChipCell<InteractionFrequency>
+          value={c.interactionFreq}
+          options={freqOptions.map((f) => ({ value: f, label: t(`InteractionFrequency.${f}`), color: interactionFreqColor[f] }))}
+          onChange={(v) => applyPatch(c.id, { interactionFreq: v })}
+        />
+      </td>
+      <td style={styles.td}>
+        <EditableChipCell<InitiativeDirection>
+          value={c.initiative}
+          options={initiativeOptions.map((i) => ({ value: i, label: t(`InitiativeDirection.${i}`), color: initiativeColor[i] }))}
+          onChange={(v) => applyPatch(c.id, { initiative: v })}
+        />
+      </td>
+      <td style={styles.td}>
+        <EditableChipCell<EmotionQuality>
+          value={c.emotionQuality}
+          options={emotionOptions.map((e) => ({ value: e, label: t(`EmotionQuality.${e}`), color: emotionColor[e] }))}
+          onChange={(v) => applyPatch(c.id, { emotionQuality: v })}
+        />
+      </td>
+      <td style={styles.td}>
+        <EditableChipCell<InvestmentBalance>
+          value={c.investmentBalance}
+          options={investmentOptions.map((i) => ({ value: i, label: t(`InvestmentBalance.${i}`), color: investmentColor[i] }))}
+          onChange={(v) => applyPatch(c.id, { investmentBalance: v })}
+        />
+      </td>
+      <td style={styles.td}>
+        <EditableChipCell<string>
+          value={c.channelId ?? ""}
+          options={channels.map((ch) => ({ value: ch.id, label: ch.name, color: ch.color as AirtableColor }))}
+          onChange={(v) => applyPatch(c.id, { channelId: v || null })}
+          onClear={c.channelId ? () => applyPatch(c.id, { channelId: null }) : undefined}
+          fallbackLabel="—"
+        />
+      </td>
+      <td style={styles.td}>
+        <EditableChipCell<OfflineStatus>
+          value={c.offlineStatus}
+          options={offlineOptions.map((o) => ({ value: o, label: t(`OfflineStatus.${o}`), color: offlineColor[o] }))}
+          onChange={(v) => applyPatch(c.id, { offlineStatus: v })}
+        />
+      </td>
+      <td style={styles.td}>
+        <EditableMultiChipCell<UpgradeSignal>
+          values={c.upgradeSignals}
+          options={upgradeOptions.map((u) => ({ value: u, label: t(`UpgradeSignal.${u}`), color: upgradeSignalColor[u] }))}
+          onChange={(v) => applyPatch(c.id, { upgradeSignals: v })}
+          emptyChip={{ label: t("noSignals"), color: "orangeLight2" }}
+        />
+      </td>
+      <td style={styles.td}>
+        <NextActionCell connection={c} t={t} onPick={setNextAction} onClear={clearOverride} />
+      </td>
+      <td style={styles.td}>{c.actionDueAt?.slice(0, 10) ?? "—"}</td>
+      <td style={styles.td}>
+        <Chip label={t(`Priority.${c.priorityAdvice}`)} color={priorityColor[c.priorityAdvice]} />
+        <span style={styles.scoreText}> · {c.priorityScore}</span>
+      </td>
+      <td style={styles.td}>
+        <Chip label={t(`Advisor.${c.advisor}`)} color={c.advisor === "AI" ? "greenLight2" : "blueLight2"} />
+      </td>
+    </tr>
+  );
+});
 
 function NextActionCell({
   connection: c,
@@ -372,6 +412,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14
   },
   filterBar: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" },
+  searchInput: {
+    background: "#1a3550",
+    color: "#cfe1f2",
+    border: "1px solid #2c4f70",
+    padding: "6px 10px",
+    borderRadius: 6,
+    fontSize: 13,
+    minWidth: 160,
+    outline: "none"
+  },
   filterSelect: {
     background: "#1a3550",
     color: "#cfe1f2",

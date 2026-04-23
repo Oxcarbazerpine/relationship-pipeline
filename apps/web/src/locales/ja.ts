@@ -26,6 +26,7 @@ export const ja: TranslationResources = {
   delete: "削除",
   confirmDelete: "このレコードを削除しますか?",
   newConnection: "新規追加",
+  newRecordName: "新規レコード",
   name: "ラベル",
   preview: "エンジンプレビュー",
   empty: "記録がありません。最初の相手を追加してください。",

@@ -26,6 +26,7 @@ export const en: TranslationResources = {
   delete: "Delete",
   confirmDelete: "Delete this record?",
   newConnection: "New connection",
+  newRecordName: "New record",
   name: "Label",
   preview: "Engine preview",
   empty: "No records yet. Add your first connection to start tracking.",

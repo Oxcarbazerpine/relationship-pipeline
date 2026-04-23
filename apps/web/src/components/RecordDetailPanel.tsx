@@ -27,7 +27,7 @@ import {
   stageColor,
   upgradeSignalColor
 } from "../airtableColors";
-import { defaultConnectionInput } from "../defaults";
+import { buildDefaultConnectionInput } from "../defaults";
 
 const stageOptions: Stage[] = ["INTRO", "COMFORT", "FLIRT", "UPGRADE", "COOLING", "ENDED"];
 const freqOptions: InteractionFrequency[] = ["HIGH", "MEDIUM", "LOW", "NONE"];
@@ -73,7 +73,7 @@ export function RecordDetailPanel({ mode, connection, onSave, onClose, onDelete 
   const { channels } = useChannels();
   const isNew = mode === "new";
   const [draft, setDraft] = useState<ConnectionInput>(() =>
-    connection ? toInput(connection) : { ...defaultConnectionInput }
+    connection ? toInput(connection) : buildDefaultConnectionInput()
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +82,7 @@ export function RecordDetailPanel({ mode, connection, onSave, onClose, onDelete 
   const recordKey = isNew ? "__new__" : connection?.id ?? null;
 
   useEffect(() => {
-    setDraft(connection ? toInput(connection) : { ...defaultConnectionInput });
+    setDraft(connection ? toInput(connection) : buildDefaultConnectionInput());
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordKey]);
