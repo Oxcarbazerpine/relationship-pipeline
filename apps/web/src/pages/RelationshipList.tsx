@@ -14,9 +14,9 @@ import type {
   UpgradeSignal
 } from "../types";
 import { Chip } from "../components/Chip";
-import { NewConnectionForm } from "../components/NewConnectionForm";
 import { EditableChipCell, EditableMultiChipCell, type ChipOption } from "../components/EditableChipCell";
 import { RecordDetailPanel } from "../components/RecordDetailPanel";
+import { defaultConnectionInput } from "../defaults";
 import {
   emotionColor,
   initiativeColor,
@@ -43,8 +43,12 @@ export function RelationshipList() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showAdd, setShowAdd] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [panelState, setPanelState] = useState<{ mode: "new" | "edit" | "closed"; id: string | null }>(
+    { mode: "closed", id: null }
+  );
+  const openId = panelState.mode === "edit" ? panelState.id : null;
+  const setOpenId = (id: string | null) =>
+    setPanelState(id ? { mode: "edit", id } : { mode: "closed", id: null });
 
   const [stageFilter, setStageFilter] = useState<Stage | "">("");
   const [freqFilter, setFreqFilter] = useState<InteractionFrequency | "">("");
@@ -113,6 +117,22 @@ export function RelationshipList() {
     await reload();
   }, [reload]);
 
+  const handleAdd = useCallback(() => {
+    setPanelState({ mode: "new", id: null });
+  }, []);
+
+  const handlePanelSave = useCallback(async (input: ConnectionInput, existingId: string | null) => {
+    if (existingId) {
+      const updated = await api.updateConnection(existingId, input);
+      setConnections((cs) => cs.map((c) => (c.id === existingId ? updated : c)));
+      setPanelState({ mode: "closed", id: null });
+    } else {
+      const created = await api.createConnection(input);
+      setConnections((cs) => [created, ...cs]);
+      setPanelState({ mode: "closed", id: null });
+    }
+  }, []);
+
   return (
     <div style={styles.page}>
       <div style={styles.header}>
@@ -123,7 +143,7 @@ export function RelationshipList() {
             <span>{t("nav.pipelineList")}</span>
           </div>
         </div>
-        <button onClick={() => setShowAdd((v) => !v)} style={styles.addBtn}>
+        <button onClick={handleAdd} style={styles.addBtn}>
           + {t("add")}
         </button>
       </div>
@@ -152,24 +172,13 @@ export function RelationshipList() {
         </span>
       </div>
 
-      {showAdd && (
-        <div style={styles.addPanel}>
-          <NewConnectionForm
-            onCreated={() => {
-              setShowAdd(false);
-              reload();
-            }}
-          />
-        </div>
-      )}
-
       {error && <div style={styles.error}>{error}</div>}
 
       <RecordDetailPanel
-        connection={connections.find((c) => c.id === openId) ?? null}
-        onClose={() => setOpenId(null)}
-        onPatch={applyPatch}
-        onSetOverride={handleOverride}
+        mode={panelState.mode}
+        connection={panelState.mode === "edit" ? connections.find((c) => c.id === panelState.id) ?? null : null}
+        onClose={() => setPanelState({ mode: "closed", id: null })}
+        onSave={handlePanelSave}
         onDelete={handleDelete}
       />
 

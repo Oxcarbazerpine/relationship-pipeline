@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   Connection,
@@ -25,6 +25,7 @@ import {
   stageColor,
   upgradeSignalColor
 } from "../airtableColors";
+import { defaultConnectionInput } from "../defaults";
 
 const stageOptions: Stage[] = ["INTRO", "COMFORT", "FLIRT", "UPGRADE", "COOLING", "ENDED"];
 const freqOptions: InteractionFrequency[] = ["HIGH", "MEDIUM", "LOW", "NONE"];
@@ -35,56 +36,123 @@ const offlineOptions: OfflineStatus[] = ["NEVER", "ONCE", "MULTIPLE"];
 const upgradeOptions: UpgradeSignal[] = ["CARE", "INVITE", "TIME_GIVE", "BODY_LANGUAGE", "EMOTIONAL_DEPENDENCE"];
 const nextActionOptions: NextAction[] = ["KEEP_CHAT", "LIGHT_UPGRADE", "CLEAR_INVITE", "SLOW_DOWN", "OBSERVE", "END"];
 
+type Mode = "new" | "edit" | "closed";
+
 interface Props {
+  mode: Mode;
   connection: Connection | null;
+  onSave: (input: ConnectionInput, existingId: string | null) => Promise<void>;
   onClose: () => void;
-  onPatch: (id: string, patch: Partial<ConnectionInput>) => Promise<void>;
-  onSetOverride: (id: string, action: NextAction | null) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
 }
 
-export function RecordDetailPanel({ connection, onClose, onPatch, onSetOverride, onDelete }: Props) {
+function toInput(c: Connection): ConnectionInput {
+  return {
+    name: c.name,
+    stage: c.stage,
+    lastInteractionAt: c.lastInteractionAt,
+    interactionFreq: c.interactionFreq,
+    initiative: c.initiative,
+    emotionQuality: c.emotionQuality,
+    investmentBalance: c.investmentBalance,
+    offlineStatus: c.offlineStatus,
+    upgradeSignals: c.upgradeSignals,
+    overrideAction: c.overrideAction,
+    overrideReason: c.overrideReason,
+    actionDueAt: c.actionDueAt,
+    notes: c.notes,
+    advisor: c.advisor
+  };
+}
+
+export function RecordDetailPanel({ mode, connection, onSave, onClose, onDelete }: Props) {
   const { t } = useTranslation();
-  const [name, setName] = useState("");
-  const [notes, setNotes] = useState("");
+  const isNew = mode === "new";
+  const [draft, setDraft] = useState<ConnectionInput>(() =>
+    connection ? toInput(connection) : { ...defaultConnectionInput }
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  const recordKey = isNew ? "__new__" : connection?.id ?? null;
 
   useEffect(() => {
-    setName(connection?.name ?? "");
-    setNotes(connection?.notes ?? "");
-  }, [connection?.id, connection?.name, connection?.notes]);
+    setDraft(connection ? toInput(connection) : { ...defaultConnectionInput });
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordKey]);
 
   useEffect(() => {
-    if (!connection) return;
+    if (mode === "closed") return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [connection, onClose]);
+  }, [mode, onClose]);
 
-  if (!connection) return null;
-  const c = connection;
+  const dirty = useMemo(() => {
+    if (isNew) return true;
+    if (!connection) return false;
+    const current = toInput(connection);
+    return JSON.stringify(current) !== JSON.stringify(draft);
+  }, [draft, connection, isNew]);
 
-  const daysSinceInteraction = c.lastInteractionAt
-    ? Math.round((Date.now() - new Date(c.lastInteractionAt).getTime()) / 86400000)
+  if (mode === "closed") return null;
+
+  const daysSinceInteraction = connection?.lastInteractionAt
+    ? Math.round((Date.now() - new Date(connection.lastInteractionAt).getTime()) / 86400000)
     : null;
-  const daysUntilDue = c.actionDueAt
-    ? Math.round((new Date(c.actionDueAt).getTime() - Date.now()) / 86400000)
+  const daysUntilDue = connection?.actionDueAt
+    ? Math.round((new Date(connection.actionDueAt).getTime() - Date.now()) / 86400000)
     : null;
+
+  const effectiveNextAction: NextAction =
+    draft.overrideAction ?? connection?.suggestedAction ?? "KEEP_CHAT";
 
   const nextActionOpts: ChipOption<NextAction>[] = nextActionOptions.map((a) => ({
     value: a,
     label: t(`NextAction.${a}`),
     color: nextActionColor[a],
-    recommendedTag: a === c.suggestedAction ? `★ ${t(`Advisor.${c.advisor}`)} ${t("recommended")}` : undefined
+    recommendedTag:
+      !isNew && connection && a === connection.suggestedAction
+        ? `★ ${t(`Advisor.${connection.advisor}`)} ${t("recommended")}`
+        : undefined
   }));
 
-  async function saveName() {
-    if (name !== c.name && name.trim()) await onPatch(c.id, { name: name.trim() });
-    else setName(c.name);
+  function update<K extends keyof ConnectionInput>(key: K, value: ConnectionInput[K]) {
+    setDraft((d) => ({ ...d, [key]: value }));
   }
-  async function saveNotes() {
-    if (notes !== (c.notes ?? "")) await onPatch(c.id, { notes: notes || null });
+
+  async function handleSave() {
+    if (!draft.name.trim()) {
+      setError(t("fields.stageName") + " ?");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(draft, connection?.id ?? null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!connection || !onDelete) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      setTimeout(() => setConfirmingDelete(false), 3000);
+      return;
+    }
+    try {
+      await onDelete(connection.id);
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
   return (
@@ -93,14 +161,11 @@ export function RecordDetailPanel({ connection, onClose, onPatch, onSetOverride,
       <aside style={styles.panel} onClick={(e) => e.stopPropagation()}>
         <header style={styles.header}>
           <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={saveName}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-            }}
+            value={draft.name}
+            onChange={(e) => update("name", e.target.value)}
             style={styles.nameInput}
             placeholder={t("fields.stageName") as string}
+            autoFocus={isNew}
           />
           <button onClick={onClose} style={styles.closeBtn} aria-label="close">×</button>
         </header>
@@ -108,20 +173,18 @@ export function RecordDetailPanel({ connection, onClose, onPatch, onSetOverride,
         <div style={styles.body}>
           <Row label={t("stage")}>
             <EditableChipCell<Stage>
-              value={c.stage}
+              value={draft.stage}
               options={stageOptions.map((s) => ({ value: s, label: t(`Stage.${s}`), color: stageColor[s] }))}
-              onChange={(v) => onPatch(c.id, { stage: v })}
+              onChange={(v) => update("stage", v)}
             />
           </Row>
 
           <Row label={t("lastInteraction")}>
             <input
               type="date"
-              value={c.lastInteractionAt?.slice(0, 10) ?? ""}
+              value={draft.lastInteractionAt?.slice(0, 10) ?? ""}
               onChange={(e) =>
-                onPatch(c.id, {
-                  lastInteractionAt: e.target.value ? new Date(e.target.value).toISOString() : null
-                })
+                update("lastInteractionAt", e.target.value ? new Date(e.target.value).toISOString() : null)
               }
               style={styles.dateInput}
             />
@@ -129,59 +192,63 @@ export function RecordDetailPanel({ connection, onClose, onPatch, onSetOverride,
 
           <Row label={t("fields.interactionFreq")}>
             <EditableChipCell<InteractionFrequency>
-              value={c.interactionFreq}
+              value={draft.interactionFreq}
               options={freqOptions.map((f) => ({ value: f, label: t(`InteractionFrequency.${f}`), color: interactionFreqColor[f] }))}
-              onChange={(v) => onPatch(c.id, { interactionFreq: v })}
+              onChange={(v) => update("interactionFreq", v)}
             />
           </Row>
 
           <Row label={t("fields.initiative")}>
             <EditableChipCell<InitiativeDirection>
-              value={c.initiative}
+              value={draft.initiative}
               options={initiativeOptions.map((i) => ({ value: i, label: t(`InitiativeDirection.${i}`), color: initiativeColor[i] }))}
-              onChange={(v) => onPatch(c.id, { initiative: v })}
+              onChange={(v) => update("initiative", v)}
             />
           </Row>
 
           <Row label={t("fields.emotionQuality")}>
             <EditableChipCell<EmotionQuality>
-              value={c.emotionQuality}
+              value={draft.emotionQuality}
               options={emotionOptions.map((e) => ({ value: e, label: t(`EmotionQuality.${e}`), color: emotionColor[e] }))}
-              onChange={(v) => onPatch(c.id, { emotionQuality: v })}
+              onChange={(v) => update("emotionQuality", v)}
             />
           </Row>
 
           <Row label={t("fields.investmentBalance")}>
             <EditableChipCell<InvestmentBalance>
-              value={c.investmentBalance}
+              value={draft.investmentBalance}
               options={investmentOptions.map((i) => ({ value: i, label: t(`InvestmentBalance.${i}`), color: investmentColor[i] }))}
-              onChange={(v) => onPatch(c.id, { investmentBalance: v })}
+              onChange={(v) => update("investmentBalance", v)}
             />
           </Row>
 
           <Row label={t("fields.offlineStatus")}>
             <EditableChipCell<OfflineStatus>
-              value={c.offlineStatus}
+              value={draft.offlineStatus}
               options={offlineOptions.map((o) => ({ value: o, label: t(`OfflineStatus.${o}`), color: offlineColor[o] }))}
-              onChange={(v) => onPatch(c.id, { offlineStatus: v })}
+              onChange={(v) => update("offlineStatus", v)}
             />
           </Row>
 
           <Row label={t("fields.upgradeSignals")}>
             <EditableMultiChipCell<UpgradeSignal>
-              values={c.upgradeSignals}
+              values={draft.upgradeSignals}
               options={upgradeOptions.map((u) => ({ value: u, label: t(`UpgradeSignal.${u}`), color: upgradeSignalColor[u] }))}
-              onChange={(v) => onPatch(c.id, { upgradeSignals: v })}
+              onChange={(v) => update("upgradeSignals", v)}
               emptyChip={{ label: t("noSignals"), color: "orangeLight2" }}
             />
           </Row>
 
           <Row label={t("nextAction")}>
             <EditableChipCell<NextAction>
-              value={c.nextAction}
+              value={effectiveNextAction}
               options={nextActionOpts}
-              onChange={(v) => onSetOverride(c.id, v === c.suggestedAction ? null : v)}
-              onClear={c.isOverridden ? () => onSetOverride(c.id, null) : undefined}
+              onChange={(v) =>
+                update("overrideAction", !isNew && connection && v === connection.suggestedAction ? null : v)
+              }
+              onClear={
+                !isNew && draft.overrideAction != null ? () => update("overrideAction", null) : undefined
+              }
               clearLabel={t("clearOverride")}
             />
           </Row>
@@ -189,11 +256,9 @@ export function RecordDetailPanel({ connection, onClose, onPatch, onSetOverride,
           <Row label={t("actionDueAtLabel")}>
             <input
               type="date"
-              value={c.actionDueAt?.slice(0, 10) ?? ""}
+              value={draft.actionDueAt?.slice(0, 10) ?? ""}
               onChange={(e) =>
-                onPatch(c.id, {
-                  actionDueAt: e.target.value ? new Date(e.target.value).toISOString() : null
-                })
+                update("actionDueAt", e.target.value ? new Date(e.target.value).toISOString() : null)
               }
               style={styles.dateInput}
             />
@@ -201,57 +266,68 @@ export function RecordDetailPanel({ connection, onClose, onPatch, onSetOverride,
 
           <Row label={t("notesLabel")} align="start">
             <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              onBlur={saveNotes}
+              value={draft.notes ?? ""}
+              onChange={(e) => update("notes", e.target.value || null)}
               placeholder="—"
               style={styles.textarea}
               rows={3}
             />
           </Row>
 
-          <div style={styles.divider} />
+          {!isNew && connection && (
+            <>
+              <div style={styles.divider} />
 
-          <Row label={t("daysSinceInteraction")}>
-            <span style={styles.plain}>{daysSinceInteraction ?? "—"}</span>
-          </Row>
+              <Row label={t("daysSinceInteraction")}>
+                <span style={styles.plain}>{daysSinceInteraction ?? "—"}</span>
+              </Row>
 
-          <Row label={t("daysUntilDue")}>
-            <span style={{ ...styles.plain, color: daysUntilDue !== null && daysUntilDue < 0 ? "#ff9090" : "#cfe1f2" }}>
-              {daysUntilDue ?? "—"}
-            </span>
-          </Row>
+              <Row label={t("daysUntilDue")}>
+                <span style={{ ...styles.plain, color: daysUntilDue !== null && daysUntilDue < 0 ? "#ff9090" : "#cfe1f2" }}>
+                  {daysUntilDue ?? "—"}
+                </span>
+              </Row>
 
-          <Row label={t("priority")}>
-            <div style={styles.inline}>
-              <Chip label={t(`Priority.${c.priorityAdvice}`)} color={priorityColor[c.priorityAdvice]} />
-              <span style={styles.muted}>{t("score")}: {c.priorityScore}</span>
-            </div>
-          </Row>
+              <Row label={t("priority")}>
+                <div style={styles.inline}>
+                  <Chip label={t(`Priority.${connection.priorityAdvice}`)} color={priorityColor[connection.priorityAdvice]} />
+                  <span style={styles.muted}>{t("score")}: {connection.priorityScore}</span>
+                </div>
+              </Row>
 
-          <Row label={t("advisorMode")}>
-            <Chip label={t(`Advisor.${c.advisor}`)} color={c.advisor === "AI" ? "greenLight2" : "blueLight2"} />
-          </Row>
+              <Row label={t("advisorMode")}>
+                <Chip label={t(`Advisor.${connection.advisor}`)} color={connection.advisor === "AI" ? "greenLight2" : "blueLight2"} />
+              </Row>
 
-          {c.advisorReason && (
-            <Row label={t("advisorReason")} align="start">
-              <div style={styles.advisorReason}>{c.advisorReason}</div>
-            </Row>
+              {connection.advisorReason && (
+                <Row label={t("advisorReason")} align="start">
+                  <div style={styles.advisorReason}>{connection.advisorReason}</div>
+                </Row>
+              )}
+            </>
           )}
         </div>
 
-        {onDelete && (
-          <footer style={styles.footer}>
+        {error && <div style={styles.errorBar}>{error}</div>}
+
+        <footer style={styles.footer}>
+          {!isNew && connection && onDelete ? (
             <button
-              onClick={() => {
-                if (confirm(t("confirmDelete") as string)) onDelete(c.id);
-              }}
-              style={styles.deleteBtn}
+              onClick={handleDelete}
+              style={{ ...styles.deleteBtn, ...(confirmingDelete ? styles.deleteBtnConfirm : null) }}
             >
-              {t("delete")}
+              {confirmingDelete ? t("confirmDelete") : t("delete")}
             </button>
-          </footer>
-        )}
+          ) : <span />}
+          <div style={styles.footerRight}>
+            <button onClick={onClose} style={styles.cancelBtn} disabled={saving}>
+              {t("cancel")}
+            </button>
+            <button onClick={handleSave} style={styles.saveBtn} disabled={saving || (!isNew && !dirty)}>
+              {saving ? "…" : t("save")}
+            </button>
+          </div>
+        </footer>
       </aside>
     </>
   );
@@ -271,8 +347,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: "fixed",
     inset: 0,
     background: "rgba(3, 12, 24, 0.45)",
-    zIndex: 40,
-    animation: "fadein 120ms ease"
+    zIndex: 40
   },
   panel: {
     position: "fixed",
@@ -365,12 +440,22 @@ const styles: Record<string, React.CSSProperties> = {
     borderLeft: "2px solid #26603a",
     paddingLeft: 8
   },
+  errorBar: {
+    background: "#3a1a1a",
+    color: "#ff9090",
+    padding: "8px 16px",
+    fontSize: 13,
+    borderTop: "1px solid #5a2a2a"
+  },
   footer: {
     padding: "12px 16px",
     borderTop: "1px solid #1f3b58",
     display: "flex",
-    justifyContent: "flex-end"
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8
   },
+  footerRight: { display: "flex", gap: 8 },
   deleteBtn: {
     background: "transparent",
     border: "1px solid #5a2a2a",
@@ -379,5 +464,29 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     cursor: "pointer",
     fontSize: 13
+  },
+  deleteBtnConfirm: {
+    background: "#5a2a2a",
+    color: "#fff",
+    border: "1px solid #ff9090"
+  },
+  cancelBtn: {
+    background: "transparent",
+    border: "1px solid #2c4f70",
+    color: "#cfe1f2",
+    padding: "6px 14px",
+    borderRadius: 6,
+    cursor: "pointer",
+    fontSize: 13
+  },
+  saveBtn: {
+    background: "#4b6cb7",
+    border: "none",
+    color: "#fff",
+    padding: "6px 16px",
+    borderRadius: 6,
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 600
   }
 };

@@ -4,6 +4,7 @@ import { api } from "../api";
 import type { Connection, ConnectionInput, InteractionFrequency, NextAction, Stage } from "../types";
 import { Chip } from "../components/Chip";
 import { RecordDetailPanel } from "../components/RecordDetailPanel";
+import { defaultConnectionInput } from "../defaults";
 import {
   emotionColor,
   initiativeColor,
@@ -26,37 +27,27 @@ export function StageKanban() {
   const [loading, setLoading] = useState(true);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<Stage | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [panelState, setPanelState] = useState<{ mode: "new" | "edit" | "closed"; id: string | null }>(
+    { mode: "closed", id: null }
+  );
 
-  const applyPatch = async (id: string, patch: Partial<ConnectionInput>) => {
-    const snapshot = connections;
-    setConnections((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } as Connection : c)));
-    try {
-      const updated = await api.patchConnection(id, patch);
-      setConnections((cs) => cs.map((c) => (c.id === id ? updated : c)));
-    } catch (e) {
-      console.error(e);
-      setConnections(snapshot);
-    }
-  };
+  const handleAdd = () => setPanelState({ mode: "new", id: null });
 
-  const setOverride = async (id: string, action: NextAction | null) => {
-    try {
-      const updated = await api.setOverride(id, action);
-      setConnections((cs) => cs.map((c) => (c.id === id ? updated : c)));
-    } catch (e) {
-      console.error(e);
+  const handleSave = async (input: ConnectionInput, existingId: string | null) => {
+    if (existingId) {
+      const updated = await api.updateConnection(existingId, input);
+      setConnections((cs) => cs.map((c) => (c.id === existingId ? updated : c)));
+    } else {
+      const created = await api.createConnection(input);
+      setConnections((cs) => [created, ...cs]);
     }
+    setPanelState({ mode: "closed", id: null });
   };
 
   const deleteConnection = async (id: string) => {
-    try {
-      await api.deleteConnection(id);
-      setConnections((cs) => cs.filter((c) => c.id !== id));
-      setOpenId(null);
-    } catch (e) {
-      console.error(e);
-    }
+    await api.deleteConnection(id);
+    setConnections((cs) => cs.filter((c) => c.id !== id));
+    setPanelState({ mode: "closed", id: null });
   };
 
   useEffect(() => {
@@ -102,13 +93,17 @@ export function StageKanban() {
 
   return (
     <div style={styles.page}>
-      <div style={styles.breadcrumb}>
-        <span style={{ color: "#7a9cc6" }}>{t("nav.pipeline")}</span>
-        <span style={{ color: "#546e87" }}> › </span>
-        <span>{t("nav.pipelineKanban")}</span>
+      <div style={styles.headerRow}>
+        <div>
+          <div style={styles.breadcrumb}>
+            <span style={{ color: "#7a9cc6" }}>{t("nav.pipeline")}</span>
+            <span style={{ color: "#546e87" }}> › </span>
+            <span>{t("nav.pipelineKanban")}</span>
+          </div>
+          <div style={styles.description}>{t("page.kanbanDesc")}</div>
+        </div>
+        <button onClick={handleAdd} style={styles.addBtn}>+ {t("add")}</button>
       </div>
-
-      <div style={styles.description}>{t("page.kanbanDesc")}</div>
 
       <div style={styles.filterBar}>
         <select
@@ -134,10 +129,10 @@ export function StageKanban() {
       </div>
 
       <RecordDetailPanel
-        connection={connections.find((c) => c.id === openId) ?? null}
-        onClose={() => setOpenId(null)}
-        onPatch={applyPatch}
-        onSetOverride={setOverride}
+        mode={panelState.mode}
+        connection={panelState.mode === "edit" ? connections.find((c) => c.id === panelState.id) ?? null : null}
+        onClose={() => setPanelState({ mode: "closed", id: null })}
+        onSave={handleSave}
         onDelete={deleteConnection}
       />
 
@@ -181,7 +176,7 @@ export function StageKanban() {
                         setDraggingId(null);
                         setDropTarget(null);
                       }}
-                      onOpen={() => setOpenId(c.id)}
+                      onOpen={() => setPanelState({ mode: "edit", id: c.id })}
                     />
                   ))}
                 </div>
@@ -323,8 +318,19 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#e3edf5",
     overflow: "auto"
   },
+  headerRow: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, gap: 12 },
   breadcrumb: { fontSize: 14, marginBottom: 4 },
-  description: { fontSize: 13, color: "#7a9cc6", marginBottom: 16 },
+  description: { fontSize: 13, color: "#7a9cc6" },
+  addBtn: {
+    background: "#4b6cb7",
+    color: "#fff",
+    border: "none",
+    padding: "8px 14px",
+    borderRadius: 6,
+    cursor: "pointer",
+    fontSize: 14,
+    flexShrink: 0
+  },
   filterBar: { display: "flex", gap: 8, marginBottom: 16 },
   filterSelect: {
     background: "#1a3550",
